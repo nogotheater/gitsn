@@ -18,6 +18,22 @@
   var card = root.querySelector('[data-rmap-card]');
   var legendFac = root.querySelector('[data-rmap-legend-fac]');
   var facLayer = null, centers = {};
+  var sheetToggle = root.querySelector('[data-rmap-sheet-toggle]');
+  var narrow = window.matchMedia('(max-width: 900px)');
+
+  /* 화면 너비를 꽉 채우되 세로 스크롤바만큼 가로 스크롤이 생기지 않게 한다 */
+  function fitWidth() { root.style.setProperty('--rmap-sbw', (window.innerWidth - document.documentElement.clientWidth) + 'px'); }
+  fitWidth();
+  window.addEventListener('resize', fitWidth);
+
+  /* 좁은 화면: 아래 시트 펼치기·접기 */
+  function setSheet(open) {
+    root.dataset.sheet = open ? 'open' : 'closed';
+    sheetToggle.setAttribute('aria-expanded', String(open));
+    sheetToggle.setAttribute('aria-label', open ? '목록 접기' : '목록 펼치기');
+  }
+  setSheet(false);
+  sheetToggle.addEventListener('click', function () { setSheet(root.dataset.sheet !== 'open'); });
   var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var geo = null, svg = null, viewBox = null, sidoBox = {}, detailLoaded = {}, anim = null;
 
@@ -268,7 +284,8 @@
     }
     card.hidden = false;
     card.dataset.unit = code;
-    place(card, x, y, card.offsetWidth, card.offsetHeight);
+    if (!narrow.matches) place(card, x, y, card.offsetWidth, card.offsetHeight);  // 좁은 화면은 아래에 고정
+    else setSheet(false);
     close.focus({ preventScroll: true });
   }
   function closeCard() { card.hidden = true; card.dataset.unit = ''; }

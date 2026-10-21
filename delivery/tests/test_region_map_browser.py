@@ -214,3 +214,43 @@ class RegionMapBrowserScenarios(StaticLiveServerTestCase):
                 expect(page.locator('[data-rmap-card] [data-field="status"]')).to_have_text('미도입')
             finally:
                 browser.close()
+
+    def test_small_screens_sheet_tap_card_and_targets(self):
+        with sync_playwright() as engine:
+            browser = engine.chromium.launch()
+            try:
+                for width, height in ((390, 844), (768, 1024), (1280, 800)):
+                    page = browser.new_page(viewport={'width': width, 'height': height}, has_touch=width < 1000)
+                    self.open_map(page)
+                    overflow = page.evaluate('document.scrollingElement.scrollWidth - document.scrollingElement.clientWidth')
+                    self.assertLessEqual(overflow, 0, f'{width}px 가로 스크롤')
+                    if width >= 1000:
+                        expect(page.locator('[data-rmap-sheet-toggle]')).to_be_hidden()
+                        page.close()
+                        continue
+                    root = page.locator('[data-rmap]')
+                    # 아래 시트: 처음엔 접힘(요약만), 손잡이로 펼치기
+                    expect(root).to_have_attribute('data-sheet', 'closed')
+                    page.locator('[data-rmap-sheet-toggle]').tap()
+                    expect(root).to_have_attribute('data-sheet', 'open')
+                    page.locator('.rmap-sido-row[data-sido="44"]').tap()
+                    expect(root).to_have_attribute('data-sido', '44')
+                    # 면을 누르면 카드(마우스 말풍선 없이 같은 정보), 화면 안에 들어온다
+                    self.click_unit(page, '.rmap-unit[data-code="44130"]')
+                    card = page.locator('[data-rmap-card]')
+                    expect(card).to_be_visible()
+                    expect(page.locator('[data-rmap-card] [data-field="name"]')).to_have_text('천안시')
+                    box = card.bounding_box()
+                    self.assertGreaterEqual(box['x'], 0)
+                    self.assertLessEqual(box['x'] + box['width'], width)
+                    self.assertLessEqual(box['y'] + box['height'], height)
+                    expect(page.locator('[data-rmap-tip]')).to_be_hidden()
+                    # 누르는 영역은 44px 이상
+                    small = page.evaluate("""() => [...document.querySelectorAll('[data-rmap] button')]
+                        .filter(b => b.offsetParent !== null)
+                        .map(b => [b.textContent.trim() || b.getAttribute('aria-label'), Math.round(b.getBoundingClientRect().height)])
+                        .filter(([, h]) => h < 44)""")
+                    self.assertEqual(small, [], f'{width}px 44px 미만 버튼')
+                    page.close()
+            finally:
+                browser.close()

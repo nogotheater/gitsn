@@ -7,7 +7,7 @@
   --rmap-glass:rgba(255,255,255,.84); --rmap-glass-line:rgba(255,255,255,.9); --rmap-shadow:0 10px 30px rgba(18,38,68,.08),0 1px 2px rgba(18,38,68,.06);
   --rmap-track:#E7ECF2; --rmap-radius:16px;
 }
-.rmap{width:100vw;margin-left:calc(50% - 50vw);margin-top:-36px;background:var(--rmap-sea);color:var(--rmap-ink)}
+.rmap{width:calc(100vw - var(--rmap-sbw,0px));margin-left:calc(50% - 50vw + var(--rmap-sbw,0px) / 2);margin-top:-36px;background:var(--rmap-sea);color:var(--rmap-ink)}
 .rmap-stage{position:relative;height:calc(100vh - 65px);min-height:640px;overflow:hidden}
 .rmap-canvas{position:absolute;inset:0;padding:120px 404px 44px 40px;display:flex;align-items:center;justify-content:center}
 .rmap-canvas svg{display:block;width:100%;height:100%}
@@ -50,7 +50,6 @@
 
 .rmap-source{position:absolute;left:40px;bottom:14px;font-size:12px;color:var(--rmap-ink-3);z-index:1}
 @media (prefers-reduced-motion:reduce){.rmap-unit{transition:none}}
-@media(max-width:639px){.rmap{margin-top:-24px}}
 
 /* 7a: 시·도 확대와 목록 */
 .rmap-unit.is-dim,.rmap-unit.is-dim.is-in{fill:#EAEEF3;stroke:#F6F8FA}
@@ -105,3 +104,33 @@
 .rmap-fac{fill:#fff;stroke:var(--rmap-in);vector-effect:non-scaling-stroke;stroke-width:2.5;cursor:pointer}
 .rmap-fac.is-dim{opacity:.4}
 .rmap-missing .rmap-fac-dot{width:8px;height:8px}
+
+.rmap-sheet-handle{display:none}
+
+/* 8: 태블릿 세로·폰 — 지도 위, 패널은 아래 시트 */
+@media (max-width:900px){
+  .rmap{margin-top:-36px}
+  .rmap-stage{height:auto;min-height:0;overflow:visible;padding-bottom:168px;display:flex;flex-direction:column}
+  .rmap-bar{order:-1}
+  .rmap-bar{position:static;padding:20px 16px 8px;right:auto}
+  .rmap-heading h1{font-size:22px}
+  .rmap-switches{width:100%}
+  .rmap-switch{flex:1 1 100%}
+  .rmap-switch button{flex:1;min-height:44px;padding:0 12px}
+  .rmap-canvas{position:relative;inset:auto;height:62vh;min-height:320px;padding:8px 12px}
+  .rmap-source{position:static;padding:4px 16px 0}
+  .rmap-error{left:16px;right:16px;top:auto}
+  .rmap-panel{position:fixed;top:auto;left:0;right:0;bottom:0;width:auto;height:156px;border-radius:20px 20px 0 0;border-bottom:0;box-shadow:0 -8px 30px rgba(18,38,68,.12);transition:height .22s ease;z-index:10;padding-bottom:env(safe-area-inset-bottom)}
+  .rmap[data-sheet="open"] .rmap-panel{height:min(78vh,640px)}
+  .rmap-sheet-handle{display:flex;justify-content:center;align-items:center;width:100%;min-height:44px;padding:0;border:0;background:transparent;flex-shrink:0}
+  .rmap-sheet-handle span{width:40px;height:5px;border-radius:999px;background:#C9D2DC}
+  .rmap-panel-head{padding:0 12px}
+  .rmap-back{min-height:44px}
+  .rmap-summary{padding:8px 20px 14px}
+  .rmap-summary-value strong{font-size:36px}
+  .rmap-card{position:fixed;left:12px!important;right:12px;top:auto!important;bottom:12px;width:auto;max-height:62vh;z-index:20}
+  .rmap-card-close{width:44px;height:44px;top:4px;right:4px}
+  .rmap-tip{display:none}
+}
+@media (max-width:639px){.rmap{margin-top:-24px}.rmap-canvas{height:56vh}}
+@media (prefers-reduced-motion:reduce){.rmap-panel{transition:none}}
