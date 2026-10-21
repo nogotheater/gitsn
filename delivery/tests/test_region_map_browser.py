@@ -87,8 +87,8 @@ class RegionMapBrowserScenarios(StaticLiveServerTestCase):
                 self.open_map(page)
                 for family in ('eavesdrop', 'camera'):
                     for target in ('local', 'council'):
-                        page.locator('[data-rmap-switch="family"] button', has_text=labels[family]).click()
-                        page.locator('[data-rmap-switch="target"] button', has_text=labels[target]).click()
+                        page.locator(f'[data-rmap-switch="family"] button[data-value="{family}"]').click()
+                        page.locator(f'[data-rmap-switch="target"] button[data-value="{target}"]').click()
                         expect(page.locator('[data-rmap]')).to_have_attribute('data-combo', f'{family}:{target}')
                         combo = payload['combos'][f'{family}:{target}']
                         expected = {c for c, s in combo['units'].items() if s['state'] == 'in'}
