@@ -111,3 +111,37 @@ def guess_location(name, category, region):
 
     # 3) 이름으로 위치를 알 수 없음 → 시설로 보고 비워 둔다
     return Guess('', FACILITY, '이름에서 위치를 찾지 못함')
+
+
+def format_location(code):
+    """코드 → 사람이 읽는 이름. 예: '44130' → '충남 천안시', '41' → '경기'. 빈 값은 ''."""
+    if not code:
+        return ''
+    if code in aa.SIDO_BY_CODE:
+        return aa.SIDO_BY_CODE[code][1]
+    if code in aa.UNIT_BY_CODE:
+        name, sido, whole = aa.UNIT_BY_CODE[code]
+        return aa.SIDO_BY_CODE[sido][1] if whole else f'{aa.SIDO_BY_CODE[sido][1]} {name}'
+    raise ValueError(f'모르는 소재지 코드: {code}')
+
+
+def parse_location(text):
+    """사람이 적은 소재지 → 코드. 코드(2·5자리) 또는 '약칭 이름'(예: '충남 천안시', '인천 영종구', '서울')을 받는다.
+    빈 값은 ''. 알 수 없으면 ValueError."""
+    t = re.sub(r'\s+', ' ', (text or '').strip())
+    if not t:
+        return ''
+    if t in aa.SIDO_BY_CODE or t in aa.UNIT_BY_CODE:
+        return t
+    short_to_sido = {short: code for code, _n, short in aa.SIDO}
+    short_to_sido.update(SIDO_NAMES)
+    parts = t.split(' ', 1)
+    sido = short_to_sido.get(parts[0])
+    if sido is None:
+        raise ValueError(f'시·도를 알 수 없음: {text}')
+    if len(parts) == 1:
+        return _sido_location(sido)
+    for code in aa.units_in(sido):
+        if aa.UNIT_BY_CODE[code][0] == parts[1]:
+            return code
+    raise ValueError(f'{parts[0]} 안에 없는 이름: {parts[1]}')

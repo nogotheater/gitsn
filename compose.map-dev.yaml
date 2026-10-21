@@ -17,4 +17,6 @@ services:
       - ./static:/app/static
       - ./scripts:/app/scripts
       - ./manage.py:/app/manage.py
+      # 3단계 대조표 입출력(실제 고객 데이터는 이 PC 폴더에만 남는다)
+      - ../_map_tasks:/map_tasks
     command: ["sh", "-c", "python scripts/wait_for_db.py && python manage.py migrate --noinput && exec python manage.py runserver 0.0.0.0:8000"]

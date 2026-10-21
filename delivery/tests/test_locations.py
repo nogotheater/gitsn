@@ -56,3 +56,25 @@ class LocationGuessScenarios(TestCase):
     def test_incheon_old_district_needs_a_choice(self):
         g = self.check('인천광역시 중구', 'local', 'capital', '', ADMIN)
         self.assertIn('영종구', g.reason)
+
+
+class LocationTextScenarios(TestCase):
+    def test_format_and_parse_round_trip(self):
+        from delivery.domain.locations import format_location, parse_location
+        for code in ('44130', '41', '12', '28155', '36110', '50000', '41110'):
+            self.assertEqual(parse_location(format_location(code)), code)
+
+    def test_parse_accepts_codes_full_names_and_blank(self):
+        from delivery.domain.locations import parse_location
+        self.assertEqual(parse_location('44130'), '44130')
+        self.assertEqual(parse_location('인천 영종구'), '28155')
+        self.assertEqual(parse_location('충청남도 천안시'), '44130')
+        self.assertEqual(parse_location('세종'), '36110')
+        self.assertEqual(parse_location('  '), '')
+
+    def test_parse_rejects_unknown_places(self):
+        from delivery.domain.locations import parse_location
+        with self.assertRaises(ValueError):
+            parse_location('인천 중구')   # 2026-07 개편으로 없어진 이름
+        with self.assertRaises(ValueError):
+            parse_location('어딘가 무슨구')
