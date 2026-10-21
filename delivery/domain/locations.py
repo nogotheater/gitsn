@@ -31,7 +31,9 @@ SIDO_NAMES.update({
 _SIDO_ORDER = sorted(SIDO_NAMES, key=len, reverse=True)
 
 # 행정기관으로 보는 이름 꼬리: (없음) / 청 / 의회 / 시청·군청·구청·도청 / (○○청사)
-_ADMIN_TAIL = re.compile(r'^(청|의회|시청|군청|구청|도청|본청)?\s*(\([^)]*청사\))?$')
+_ADMIN_TAIL = re.compile(r'^(청|의회|시청|군청|구청|도청|본청)?\s*(\(?[가-힣]*청사\)?)?$')
+# 행정기관과 시설을 '·'로 묶은 기록(예: 포항시청·포항중앙상가, 종로구·마로니에공원)은 행정기관으로 본다
+_ADMIN_COMBINED = re.compile(r'^(청|의회|시청|군청|구청)?·')
 
 _UNITS_BY_NAME = {}
 for _code, _name, _sido, _whole in aa.UNITS:
@@ -72,6 +74,7 @@ def _admin_tail(tail):
 def guess_location(name, category, region):
     """name: 고객사 명칭, category: 'local'/'council'/…, region: 'capital' 등 권역 코드."""
     text = re.sub(r'\s+', ' ', (name or '').strip())
+    text = text.replace('특례시', '시')  # 수원·고양·용인·창원 특례시
     region_sidos = REGION_SIDO.get(region)
 
     # 1) 시·도 이름으로 시작하는 경우
@@ -101,9 +104,9 @@ def guess_location(name, category, region):
             names = ', '.join(sorted(f'{aa.SIDO_BY_CODE[aa.UNIT_BY_CODE[c][1]][1]} {aa.UNIT_BY_CODE[c][0]}' for c in any_codes))
             return Guess('', ADMIN if _admin_tail(tail) else FACILITY, f'권역과 맞는 후보 없음(후보: {names})')
     if len(codes) == 1:
-        sep = tail[:1]
-        if _admin_tail(tail) or sep == '·':
-            return Guess(codes[0], ADMIN, f'면 이름: {aa.UNIT_BY_CODE[codes[0]][0]}' + (' (·로 묶인 기록)' if sep == '·' else ''))
+        combined = bool(_ADMIN_COMBINED.match(tail))
+        if _admin_tail(tail) or combined:
+            return Guess(codes[0], ADMIN, f'면 이름: {aa.UNIT_BY_CODE[codes[0]][0]}' + (' (·로 묶인 기록)' if combined else ''))
         return Guess(codes[0], FACILITY, f'{aa.UNIT_BY_CODE[codes[0]][0]} 소속 시설')
     if len(codes) > 1:
         names = ', '.join(sorted(f'{aa.SIDO_BY_CODE[aa.UNIT_BY_CODE[c][1]][1]} {aa.UNIT_BY_CODE[c][0]}' for c in codes))

@@ -78,3 +78,18 @@ class LocationTextScenarios(TestCase):
             parse_location('인천 중구')   # 2026-07 개편으로 없어진 이름
         with self.assertRaises(ValueError):
             parse_location('어딘가 무슨구')
+
+
+class LocationGuessFixes(TestCase):
+    """3단계 대조표에서 찾은 실제 이름 형식(2026-10-21)."""
+    def test_special_city_name(self):
+        g = guess_location('수원특례시', 'local', 'capital')
+        self.assertEqual((g.location_code, g.institution_type), ('41110', ADMIN))
+
+    def test_office_combined_with_facility(self):
+        g = guess_location('포항시청·포항중앙상가', 'local', 'yeongnam')
+        self.assertEqual((g.location_code, g.institution_type), ('47110', ADMIN))
+
+    def test_branch_office_without_parentheses(self):
+        g = guess_location('전남광주통합특별시 광주청사', 'local', 'honam')
+        self.assertEqual((g.location_code, g.institution_type), ('12', ADMIN))
