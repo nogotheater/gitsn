@@ -22,7 +22,10 @@ class RegionMapBrowserScenarios(StaticLiveServerTestCase):
         c = Product.objects.create(code='rmb-c', name='Alpha-C', marker='C')
         for name, cat, loc, kind, product in [('천안시', Category.LOCAL, '44130', 'admin', s),
                                               ('아산시', Category.LOCAL, '44200', 'admin', c),
-                                              ('천안시의회', Category.COUNCIL, '44130', 'admin', s)]:
+                                              ('천안시의회', Category.COUNCIL, '44130', 'admin', s),
+                                              ('충청남도', Category.LOCAL, '44', 'admin', s),
+                                              ('전남광주통합특별시 광주청사', Category.LOCAL, '12', 'admin', s),
+                                              ('전남광주통합특별시 무안청사', Category.LOCAL, '12', 'admin', s)]:
             cu = Customer.objects.create(organization=Organization.objects.create(official_name=name), category=cat,
                                          region=Region.CHUNGCHEONG, partner_public=True, location_code=loc, institution_type=kind)
             k = Contract.objects.create(customer=cu, contracting_party=cu.organization, is_active=True, contract_date=date(2021, 1, 1))
@@ -99,5 +102,55 @@ class RegionMapBrowserScenarios(StaticLiveServerTestCase):
                         self.assertEqual([r[1] for r in rows], [f"{s['adopted']} / {s['total']}" for s in combo['sido']])
                         pressed = page.eval_on_selector_all('[aria-pressed="true"]', 'els => els.map(e => e.textContent)')
                         self.assertEqual(sorted(pressed), sorted([labels[family], labels[target]]))
+            finally:
+                browser.close()
+
+
+    def test_sido_zoom_lists_and_back(self):
+        payload = region_map_payload()  # 브라우저 전에 계산
+        names = {code: u['name'] for code, u in payload['units'].items()}
+        def sido(combo_key, code):
+            return [x for x in payload['combos'][combo_key]['sido'] if x['code'] == code][0]
+        with sync_playwright() as engine:
+            browser = engine.chromium.launch()
+            try:
+                page = browser.new_page(viewport={'width': 1440, 'height': 900})
+                self.open_map(page)
+                with page.expect_response(lambda r: 'delivery/map/sido/44.json' in r.url) as resp:
+                    page.locator('.rmap-sido-row[data-sido="44"]').click()
+                self.assertEqual(resp.value.status, 200)
+                root = page.locator('[data-rmap]')
+                expect(root).to_have_attribute('data-sido', '44')
+                expect(page.locator('[data-rmap-sido-title]')).to_have_text('충청남도')
+                s = sido('eavesdrop:local', '44')
+                expect(page.locator('[data-rmap-national] strong')).to_have_text(str(s['adopted']))
+                self.assertEqual(page.eval_on_selector_all('[data-rmap-missing] li', 'els => els.map(e => e.textContent)'),
+                                 [names[c] for c in s['missing']])
+                self.assertEqual(page.eval_on_selector_all('[data-rmap-adopted] .rmap-org-name', 'els => els.map(e => e.textContent)'), ['천안시'])
+                expect(page.locator('[data-rmap-wide]')).to_contain_text('충청남도')
+                # 다른 시·도 면은 흐리게, 고른 시·도 테두리는 진하게
+                self.assertEqual(page.locator('.rmap-unit.is-dim[data-sido="44"]').count(), 0)
+                self.assertGreater(page.locator('.rmap-unit.is-dim').count(), 200)
+                expect(page.locator('.rmap-sido.is-selected')).to_have_attribute('data-code', '44')
+                # 전환을 바꿔도 시·도 유지
+                page.locator('[data-rmap-switch="family"] button[data-value="camera"]').click()
+                expect(root).to_have_attribute('data-combo', 'camera:local')
+                expect(root).to_have_attribute('data-sido', '44')
+                s = sido('camera:local', '44')
+                self.assertEqual(page.eval_on_selector_all('[data-rmap-missing] li', 'els => els.map(e => e.textContent)'),
+                                 [names[c] for c in s['missing']])
+                # ← 전국
+                page.locator('[data-rmap-back]').click()
+                expect(root).to_have_attribute('data-sido', '')
+                expect(page.locator('.rmap-sido-row')).to_have_count(16)
+                # 전남광주 광역 줄은 여러 기관을 나열하고, Esc로 전국 복귀
+                page.locator('[data-rmap-switch="family"] button[data-value="eavesdrop"]').click()
+                page.locator('.rmap-sido-row[data-sido="12"]').click()
+                expect(page.locator('[data-rmap-wide] [data-org]')).to_have_count(2)
+                page.keyboard.press('Escape')
+                expect(root).to_have_attribute('data-sido', '')
+                # 지도 면을 눌러도 그 시·도로 간다
+                page.locator('.rmap-unit[data-code="44130"]').click(force=True)
+                expect(root).to_have_attribute('data-sido', '44')
             finally:
                 browser.close()

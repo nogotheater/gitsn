@@ -1,8 +1,8 @@
-{% extends 'planning/base.html' %}{% load delivery_display %}
+{% extends 'planning/base.html' %}{% load delivery_display static %}
 {% block title %}지역 현황{% endblock %}
 {% block content %}
 <link rel="stylesheet" href="{% versioned_static 'delivery/region-map.css' %}">
-<section class="rmap" data-rmap data-map-url="{% versioned_static 'delivery/map/korea-lite.json' %}" aria-labelledby="rmap-title">
+<section class="rmap" data-rmap data-map-url="{% versioned_static 'delivery/map/korea-lite.json' %}" data-sido-base="{% static 'delivery/map/sido/' %}" aria-labelledby="rmap-title">
   <div class="rmap-stage" data-rmap-stage>
     <div class="rmap-canvas" data-rmap-canvas></div>
     <p class="rmap-error" data-rmap-error role="alert" hidden>지도 경계 파일을 불러오지 못했습니다. 새로고침해 주세요. 계속 안 되면 기획팀에 알려 주세요.</p>
@@ -23,8 +23,9 @@
     </header>
 
     <aside class="rmap-panel" data-rmap-panel aria-live="polite">
+      <div class="rmap-panel-head" data-rmap-panel-head></div>
       <div class="rmap-summary" data-rmap-summary></div>
-      <ol class="rmap-sido-list" data-rmap-sido-list aria-label="시·도별 도입 현황"></ol>
+      <div class="rmap-panel-body" data-rmap-panel-body></div>
     </aside>
 
     <p class="rmap-source">경계: 통계청 SGIS, vuski/admdongkor (CC BY 4.0)</p>
