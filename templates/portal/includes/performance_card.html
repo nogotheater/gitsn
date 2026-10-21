@@ -1,0 +1,7 @@
+{% load delivery_display %}
+{% if is_partner %}<article class="customer-card">{% else %}<a class="customer-card" href="{% if item.kind == 'customer' %}{% url 'employee-customer' item.id %}{% else %}{% url 'employee-site' item.id %}{% endif %}">{% endif %}
+  <div class="symbol">{% if item.has_logo %}<img src="{% url 'performance-logo' item.kind item.id %}" alt=""><span class="fallback" hidden>{{ item.name|first }}</span>{% else %}{{ item.name|first }}{% endif %}</div>
+  <h3>{{ item.name }}</h3>
+  <p class="muted small">{{ item.category_label }}{% if item.region_label %} · {{ item.region_label }}{% endif %}</p>
+  <div class="badges">{% for product in item.products %}<span class="product-mark{% if product.emphasized %} is-selected{% elif product.subdued %} is-subdued{% endif %}" style="--product-color:{{ product.color|badge_color }}" title="{{ product.name }}{% if product.emphasized %} · 선택 제품{% endif %}">{{ product.marker|default:product.name }}</span>{% endfor %}</div>
+{% if is_partner %}</article>{% else %}</a>{% endif %}

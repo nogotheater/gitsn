@@ -1,0 +1,30 @@
+@page{size:A4 portrait;margin:14mm 14mm 16mm}
+*{box-sizing:border-box}body{margin:0;background:#eef1f5;color:#383737;font:11pt/1.4 "Freesentation VF",sans-serif}p{margin:0}
+.document{width:210mm;max-width:100%;margin:24px auto}.document:not(.is-paginated){background:white;padding:14mm}
+.document.is-paginated{width:calc(210mm * var(--preview-scale,1));max-width:none}
+.print-page{width:210mm;padding:14mm 14mm 16mm;background:white;margin:0 0 24px;zoom:var(--preview-scale,1)}
+.page-body{position:relative;height:266mm;width:182mm}.page-content{display:flow-root}.document-head{position:relative}
+.brand{line-height:0}.brand-logo{height:7mm;width:auto}
+.eyebrow{position:absolute;top:0;right:0;color:#0474d4;font-size:8pt}
+h1{font-size:19pt;line-height:1.25;margin:4mm 0 1.5mm;color:#07090c;font-weight:700;overflow-wrap:anywhere;word-break:keep-all}
+.subtitle{color:#565e68;font-size:9pt;line-height:1.3;margin-bottom:1.5mm}
+.summary{display:flex;align-items:baseline;gap:1mm 4mm;flex-wrap:wrap;padding:2mm 0;border-top:1px solid #d9dee4;border-bottom:1px solid #d9dee4;margin:3mm 0}
+.main-count{white-space:nowrap;font-size:10pt}.main-count strong{font-size:26pt;line-height:1.05;color:#07090c;margin:0 1mm;font-weight:700}
+.category-totals{display:flex;flex-wrap:wrap;gap:1mm 3mm;width:100%;font-size:8.5pt;line-height:1.35;color:#565e68}
+.private-note{font-size:8.5pt;color:#565e68;width:100%}.conditions{font-size:9pt;color:#565e68;margin:0 0 2mm}
+.category-group{display:flow-root;margin-top:4mm}
+.category-group h2{font-size:10.5pt;line-height:1.3;color:#383737;font-weight:650;border-bottom:1px solid #c5ccd5;padding:0 0 1.5mm;margin:0 0 2mm;break-after:avoid;page-break-after:avoid}
+.card-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));column-gap:3mm;align-items:stretch;break-inside:avoid;page-break-inside:avoid}
+.reference-card{display:grid;grid-template-columns:12mm minmax(0,1fr);column-gap:2mm;align-items:center;min-height:14.2mm;padding:1.5mm 0;break-inside:avoid;page-break-inside:avoid}
+.symbol{width:12mm;height:8mm;display:flex;align-items:center;justify-content:center}.symbol img{display:block;max-width:12mm;max-height:8mm;width:auto;height:auto;object-fit:contain}
+.symbol>span{width:8mm;height:8mm;border-radius:1.5mm;background:#f5f6f8;display:flex;align-items:center;justify-content:center;font-size:12pt;color:#0474d4;font-weight:600}
+.customer-name{display:flex;align-items:center;min-height:calc(2 * 11pt * 1.3);min-width:0}
+h3{font-size:11pt;line-height:1.3;color:#07090c;font-weight:550;margin:0;overflow-wrap:anywhere;word-break:keep-all;white-space:normal}
+.repeat-head{display:flex;align-items:center;gap:3mm;border-bottom:1px solid #d9dee4;padding-bottom:2mm;margin-bottom:3mm;min-height:8mm}.repeat-head strong{font-size:10pt;color:#07090c}
+.repeat-title{font-size:8.5pt;color:#383737;flex:1;min-width:0;overflow-wrap:anywhere;word-break:keep-all}.repeat-eyebrow{font-size:7pt;color:#0474d4;white-space:nowrap}
+.document-footer{display:flex;justify-content:space-between;align-items:flex-end;gap:4mm;border-top:1px solid #d9dee4;padding-top:2mm;font-size:7.5pt;line-height:1.3;color:#565e68}.page-body>.document-footer{position:absolute;bottom:0;left:0;right:0}.page-number{white-space:nowrap}
+.empty-output{padding:12mm 0;color:#565e68;overflow-wrap:anywhere}
+.print-controls{max-width:1000px;margin:20px auto;display:flex;gap:16px;align-items:center;justify-content:space-between;padding:16px;background:white;font-size:14px;flex-wrap:wrap}.print-controls a{color:#0474d4}.print-controls form{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.print-controls button,.print-controls select,.print-controls .primary{font:inherit;padding:9px 12px;border:1px solid #6b7580;background:white;border-radius:4px;min-height:40px}.print-controls .primary{background:#0474d4;color:white;text-decoration:none;border-color:#0474d4}.print-actions{display:flex;gap:8px}.print-controls select{max-width:100%}.print-tip{font-size:12px;color:#565e68;flex-basis:100%}
+@media(max-width:700px){.document{margin:12px auto}.print-controls{margin:12px;gap:12px}.print-controls form{width:100%}.print-controls select{flex:1;min-width:0}}
+@media print{body{background:white}.document,.document.is-paginated{width:auto;max-width:none;margin:0;padding:0!important}.print-page{width:182mm;padding:0;margin:0;zoom:1;break-after:page;page-break-after:always}.print-page:last-child{break-after:auto;page-break-after:auto}.print-controls{display:none!important}}
