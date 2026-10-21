@@ -1,0 +1,9 @@
+# 폰 미리보기 전용(2026-10-21). 같은 와이파이에서 이 PC의 납품현황을 열 수 있게 한다. 운영에는 쓰지 않는다.
+# 자동으로 적용되지 않는다. _map_tasks\130_phone_preview_on.cmd 가 LAN_IP를 넣어 함께 지정하고,
+# 131_phone_preview_off.cmd(= docker compose up -d --wait)로 원래대로(이 PC에서만) 돌아간다.
+services:
+  web:
+    ports: !override
+      - "0.0.0.0:${WEB_PORT:-8000}:8000"
+    environment:
+      DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,testserver,${LAN_IP:?LAN_IP 필요}"

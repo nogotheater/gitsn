@@ -32,7 +32,9 @@ main:has(.rmap){min-height:0}
 .rmap-unit.is-dim{opacity:.38}
 .rmap-unit.is-dim:hover{opacity:.6}
 .rmap-sido{fill:none;stroke:var(--rmap-sido-edge);stroke-width:1.1;vector-effect:non-scaling-stroke;stroke-linejoin:round;pointer-events:none}
-.rmap-sido.is-selected{stroke:var(--rmap-ink);stroke-width:2}
+/* 고른 시·도: 테두리 강조 없이(19:50 형우) 그 시·도 면 밑에 그림자 */
+.rmap-sido.is-selected{stroke:var(--rmap-sido-edge);stroke-width:1.1}
+.rmap-sido-shadow{fill:#fff;stroke:none;pointer-events:none}  /* 그림자는 SVG 필터(#rmap-shadow) */
 .rmap-error{position:absolute;left:404px;top:calc(var(--rmap-bar-h,120px) + 8px);max-width:440px;padding:16px 20px;border-radius:var(--rmap-radius);background:var(--error-bg);color:var(--error);font-size:14px;z-index:3}
 .rmap-canvas .rmap-error{position:static;margin:auto}
 
@@ -169,16 +171,16 @@ button.rmap-org:hover{background:var(--rmap-wash)}
 .rmap-org-year{font-variant-numeric:tabular-nums}
 .rmap-tip-line .rmap-mark{width:18px;height:18px;font-size:11px}
 
-/* 광역 배지(spec v4 1-A, 17:17): 유리 알약 + 기관 이름. 점 채움 = 도입, 점 테두리만 = 일부(전남광주 2칸 중 1칸), 빈 점 + 회색 글자 = 미도입 */
+/* 광역 배지(19:50 형우): 점 없이 배지 자체를 채움 = 도입(진한 제품군 색), 유리 그대로 = 미도입, 테두리만 색 = 일부(전남광주 2칸 중 1칸). 누르면 광역 기관 카드 */
 .rmap-badges{position:absolute;inset:0;pointer-events:none;z-index:1}
 .rmap-badges[hidden]{display:none}
-.rmap-badge{position:absolute;transform:translate(-50%,-50%);pointer-events:none;display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px 0 6px;border-radius:999px;background:var(--rmap-glass);-webkit-backdrop-filter:var(--rmap-blur);backdrop-filter:var(--rmap-blur);border:1px solid var(--rmap-glass-line);box-shadow:0 2px 8px rgba(30,50,90,.14);color:var(--rmap-ink-3);font-size:11px;font-weight:600;line-height:1;white-space:nowrap}
-.rmap-badge-dot{width:8px;height:8px;border-radius:50%;background:#fff;box-shadow:inset 0 0 0 1.5px #A7B1BD;flex-shrink:0}
-.rmap-badge.is-in{color:var(--rmap-ink);font-weight:700}
-.rmap-badge.is-in .rmap-badge-dot{background:var(--rmap-in-strong);box-shadow:0 0 0 2px var(--rmap-wash-2)}
-.rmap-badge.is-part{color:var(--rmap-ink)}
-.rmap-badge.is-part .rmap-badge-dot{box-shadow:inset 0 0 0 2px var(--rmap-in-strong)}
-.rmap-badge-sample{position:static;transform:none;height:18px;padding:0 6px 0 5px;font-size:10px}
+.rmap-badge{position:absolute;transform:translate(-50%,-50%);pointer-events:auto;cursor:pointer;display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:999px;background:var(--rmap-glass);-webkit-backdrop-filter:var(--rmap-blur);backdrop-filter:var(--rmap-blur);border:1px solid var(--rmap-glass-line);box-shadow:0 2px 8px rgba(30,50,90,.14);color:var(--rmap-ink-3);font-size:11px;font-weight:600;line-height:1;white-space:nowrap}
+.rmap-badge::before{content:"";position:absolute;inset:-10px -4px}  /* 손가락으로 누를 자리를 넓힌다 */
+.rmap-badge.is-in{background:var(--rmap-in-strong);border-color:transparent;color:#fff;font-weight:700}
+.rmap-badge.is-part{background:var(--rmap-wash-2);border-color:var(--rmap-in-strong);color:var(--rmap-in-strong);font-weight:700}
+.rmap-badge:focus-visible{outline:2px solid var(--rmap-ink);outline-offset:2px}
+.rmap-badge-sample{position:static;transform:none;height:18px;padding:0 6px;font-size:10px;pointer-events:none;cursor:default}
+.rmap-badge-sample::before{display:none}
 /* 광역 상태 카드(spec v4 1-D) */
 .rmap-wide{flex-direction:column;align-items:stretch;gap:8px}
 .rmap-wide-card{display:grid;grid-template-columns:36px 1fr auto;gap:12px;align-items:center;padding:10px 12px;border-radius:var(--rmap-radius-2);background:var(--rmap-cell);box-shadow:inset 0 0 0 1px rgba(18,38,68,.06)}
@@ -215,7 +217,69 @@ button.rmap-wide-card:hover{box-shadow:inset 0 0 0 1px var(--rmap-in)}
 /* 시군구 이름(17:49): 흰 테두리 글씨, 누름은 밑의 면이 받는다 */
 .rmap-labels{position:absolute;inset:0;pointer-events:none;z-index:1;overflow:hidden}
 .rmap-labels[hidden]{display:none}
-.rmap-label{position:absolute;transform:translate(-50%,-50%);font-size:12px;font-weight:600;color:var(--rmap-ink);white-space:nowrap;line-height:1.2;
-  text-shadow:0 0 2px #fff,0 0 2px #fff,1px 1px 0 #fff,-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff}
+/* 19:32 형우: 흰 테두리는 얇게, 글씨는 검정보다 부드러운 회남색. 크기는 확대 정도에 따라 JS가 정한다(10~16px) */
+.rmap-label{position:absolute;transform:translate(-50%,-50%);font-size:inherit;font-weight:700;color:#4A5768;white-space:nowrap;line-height:1.2;
+  text-shadow:1px 0 0 #fff,-1px 0 0 #fff,0 1px 0 #fff,0 -1px 0 #fff}  /* 19:50: 흐림 없는 얇은 흰 테두리 */
 @media (max-width:900px),(max-width:1100px) and (orientation:portrait){.rmap-zoom{right:12px;bottom:12px}}
-@media (max-width:900px),(max-width:1100px) and (orientation:portrait){.rmap-label{font-size:11px}}
+
+/* ===== 모바일 v5(18:45 형우 승인): 지도가 머리띠 아래 화면 전체, 전환은 지도 위 한 줄 유리 띠, 시트는 3단(접힘·반·전부), 메뉴는 ☰ ===== */
+.rmap-menu-btn{display:none}
+@media (max-width:900px),(max-width:1100px) and (orientation:portrait){
+  body:has(.rmap) .topbar-inner{flex-wrap:nowrap;min-height:48px;padding-block:0;gap:8px}
+  body:has(.rmap) .topbar nav,body:has(.rmap) .topbar form{display:none}
+  body:has(.rmap).rmap-menu-open .topbar-inner{flex-wrap:wrap;padding-bottom:8px}
+  body:has(.rmap).rmap-menu-open .topbar nav{display:flex;order:3;width:100%;flex-direction:column;gap:0;border-top:1px solid var(--border-subtle);padding-top:4px;margin-top:0}
+  body:has(.rmap).rmap-menu-open .topbar nav a{display:flex;align-items:center;min-height:44px;font-size:15px}
+  body:has(.rmap).rmap-menu-open .topbar form{display:block;order:4;width:100%;margin-left:0}
+  body:has(.rmap).rmap-menu-open .topbar form .button{min-height:44px;padding-inline:0}
+  .rmap-menu-btn{display:inline-flex;align-items:center;justify-content:center;margin-left:auto;width:44px;height:44px;padding:0;border:0;border-radius:6px;background:transparent;appearance:none}
+  .rmap-menu-btn span,.rmap-menu-btn span::before,.rmap-menu-btn span::after{display:block;width:20px;height:2px;border-radius:2px;background:var(--brand-navy);position:relative;content:""}
+  .rmap-menu-btn span::before{position:absolute;top:-6px}
+  .rmap-menu-btn span::after{position:absolute;top:6px}
+  body.rmap-menu-open .rmap-menu-btn span{background:transparent}
+  body.rmap-menu-open .rmap-menu-btn span::before{top:0;transform:rotate(45deg)}
+  body.rmap-menu-open .rmap-menu-btn span::after{top:0;transform:rotate(-45deg)}
+
+  .rmap-stage{display:block;height:var(--rmap-stage-h,calc(100dvh - 49px));min-height:420px;padding-bottom:0;overflow:hidden}
+  .rmap-bar{position:absolute;top:8px;left:8px;right:8px;order:0;padding:4px;gap:0;background:var(--rmap-glass);-webkit-backdrop-filter:var(--rmap-blur);backdrop-filter:var(--rmap-blur);border:1px solid var(--rmap-glass-line);border-radius:var(--rmap-radius);box-shadow:var(--rmap-shadow)}
+  .rmap-heading,.rmap-legend{display:none}
+  .rmap-switches{width:100%;flex-wrap:nowrap;gap:4px}
+  .rmap-switch{flex:1 1 0;min-width:0}
+  .rmap-switch button{flex:1 1 0;min-width:0;min-height:44px;padding:0 4px;font-size:13px;white-space:normal;line-height:1.15}
+  .rmap-canvas{position:absolute;inset:0;height:auto;min-height:0;padding:var(--rmap-bar-h,72px) 12px calc(var(--rmap-sheet-h,90px) + 12px) 12px}
+  .rmap-source{position:absolute;left:12px;right:auto;bottom:calc(var(--rmap-sheet-h,90px) + 4px);padding:0;font-size:10px}
+  .rmap-zoom{right:10px;bottom:calc(var(--rmap-sheet-h,90px) + 10px)}
+  .rmap-error{position:absolute;top:calc(var(--rmap-bar-h,72px) + 8px);left:12px;right:12px;margin:0}
+
+  .rmap-panel{max-height:none;height:auto;transition:height .22s ease}
+  .rmap[data-sheet-drag="1"] .rmap-panel{transition:none}
+  .rmap[data-sheet="open"] .rmap-panel{height:52dvh}
+  .rmap[data-sheet="full"] .rmap-panel{height:calc(var(--rmap-stage-h,100dvh) - 8px)}
+  .rmap[data-sheet="full"] .rmap-panel-body{display:block}
+  .rmap-sheet-handle{touch-action:none;cursor:grab}
+  /* 접힘: 숫자와 광역·기초를 한 줄로 */
+  .rmap[data-sheet="closed"] .rmap-summary{display:flex;align-items:center;gap:10px;padding:0 12px 10px;border-bottom:0}
+  .rmap[data-sheet="closed"] .rmap-summary-label,.rmap[data-sheet="closed"] .rmap-summary-bar{display:none}
+  .rmap[data-sheet="closed"] .rmap-summary-value{margin:0;flex-shrink:0}
+  .rmap[data-sheet="closed"] .rmap-summary-value strong{font-size:28px}
+  .rmap[data-sheet="closed"] .rmap-summary-value span{font-size:15px}
+  .rmap[data-sheet="closed"] .rmap-summary-parts{flex:1;margin:0;gap:6px}
+  .rmap[data-sheet="closed"] .rmap-summary-parts>button{padding:4px 8px}
+  .rmap[data-sheet="closed"] .rmap-part-value b{font-size:15px}
+  .rmap-panel-head{padding:0 8px}
+  .rmap-card{bottom:calc(var(--rmap-sheet-h,90px) + 8px)}
+}
+
+/* 시트: 접힘·반에서는 패널 어디를 끌어도 시트가 움직인다(19:50) */
+@media (max-width:900px),(max-width:1100px) and (orientation:portrait){
+  /* 손잡이·머리·요약은 늘 끌기, 목록은 '전부'일 때만 스크롤(JS가 바꾼다). 부모에 none을 주면 목록 스크롤도 막히므로 나눠서 준다 */
+  .rmap-sheet-handle,.rmap-panel-head,.rmap-summary{touch-action:none}
+  .rmap-card{transition:opacity .15s ease}
+}
+
+/* 20:10: 지도 영역(배지·이름 위 포함)에서는 브라우저가 페이지를 확대하지 않고 지도가 손가락을 받는다 */
+.rmap-canvas,.rmap-badge{touch-action:none}
+
+/* 누른 시군구: 카드가 열려 있는 동안 마우스를 올렸을 때 색 유지(20:20 형우) */
+.rmap-unit.is-picked{fill:#BCC7D3}
+.rmap-unit.is-in.is-picked{fill:var(--rmap-in-strong)}

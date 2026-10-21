@@ -20,7 +20,7 @@
   var narrow = window.matchMedia('(max-width: 900px), (max-width: 1100px) and (orientation: portrait)');
   var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var geo = null, svg = null, viewBox = null, sidoBox = {}, detailLoaded = {}, anim = null;
-  var facLayer = null, centers = {}, cardOpener = null;
+  var facLayer = null, centers = {}, cardOpener = null, unitLayer = null, selLayer = null, shadowPath = null;
   var badgeLayer = document.createElement('div');
   badgeLayer.className = 'rmap-badges';
   var labelLayer = document.createElement('div');  // 확대했을 때 시군구 이름(11d)
@@ -80,13 +80,17 @@
 
   /* ---------- 배치 재기(리뷰 1·4·16·29) ---------- */
   function layout() {
+    natCache = null;
     root.style.setProperty('--rmap-sbw', (window.innerWidth - document.documentElement.clientWidth) + 'px');
     if (narrow.matches) {
-      root.style.removeProperty('--rmap-bar-h');
-      root.style.removeProperty('--rmap-stage-h');
-      var h = panel.offsetHeight;
-      root.style.setProperty('--rmap-sheet-h', h + 'px');
-      document.body.style.paddingBottom = h + 'px';  // 바닥글이 접힌 시트 뒤에 가려지지 않게
+      // 모바일(v5, 18:45 형우): 지도가 머리띠 아래 화면 전체를 쓰고, 전환 띠와 시트는 지도 위에 뜬다
+      var top = stage.getBoundingClientRect().top + window.scrollY;
+      root.style.setProperty('--rmap-stage-h', Math.max(420, window.innerHeight - top) + 'px');
+      root.style.setProperty('--rmap-bar-h', (bar.offsetHeight + 8 + 8) + 'px');
+      if (root.dataset.sheet === 'closed' && !root.dataset.sheetDrag) peekH = panel.offsetHeight;
+      // 지도의 '보여줄 범위'는 접힌 시트 위까지(펼쳐도 지도를 다시 맞추지 않는다)
+      root.style.setProperty('--rmap-sheet-h', peekH + 'px');
+      document.body.style.paddingBottom = peekH + 'px';  // 바닥글이 접힌 시트 뒤에 가려지지 않게
     } else {
       document.body.style.paddingBottom = '';
       root.style.removeProperty('--rmap-sheet-h');
@@ -98,14 +102,86 @@
     }
   }
 
-  /* ---------- 아래 시트 ---------- */
+  /* ---------- 아래 시트(v5): 접힘 / 반 / 전부 3단. 손잡이를 끌면 가까운 단에 붙고, 누르면 접힘↔반 ---------- */
+  var peekH = 90, sheetDrag = null, suppressSheetClick = false;
   function setSheet(open) {
-    root.dataset.sheet = open ? 'open' : 'closed';
-    sheetToggle.setAttribute('aria-expanded', String(open));
-    sheetToggle.setAttribute('aria-label', open ? '목록 접기' : '목록 펼치기');
+    var st = open === 'full' ? 'full' : open ? 'open' : 'closed';
+    root.dataset.sheet = st;
+    panel.style.height = '';
+    sheetToggle.setAttribute('aria-expanded', String(st !== 'closed'));
+    sheetToggle.setAttribute('aria-label', st === 'closed' ? '목록 펼치기' : '목록 접기');
+    sheetTouchAction();
     if (narrow.matches) whenVisible(layout);
   }
-  sheetToggle.addEventListener('click', function () { setSheet(root.dataset.sheet !== 'open'); });
+  function sheetStops() {
+    var top = stage.getBoundingClientRect().top;
+    return { closed: peekH, open: Math.round(window.innerHeight * 0.52), full: Math.round(window.innerHeight - Math.max(top, 0) - 8) };
+  }
+  sheetToggle.addEventListener('click', function () {
+    if (suppressSheetClick) { suppressSheetClick = false; return; }
+    setSheet(root.dataset.sheet === 'closed');
+  });
+  /* 시트 끌기(19:50 형우): 손잡이뿐 아니라 패널 어디서든 끈다. '전부'일 때 목록 안에서는 목록이 스크롤되고,
+     위쪽(손잡이·머리·요약)을 끌면 내려간다. 카드가 떠 있으면 시트와 같이 올라가며 흐려지다 사라진다 */
+  function sheetTouchAction() {
+    body.style.touchAction = !narrow.matches ? '' : root.dataset.sheet === 'full' ? 'pan-y' : 'none';
+  }
+  panel.addEventListener('pointerdown', function (ev) {
+    if (!narrow.matches || (ev.pointerType === 'mouse' && ev.button !== 0)) return;
+    if (root.dataset.sheet === 'full' && body.contains(ev.target)) return;  // 전부: 목록은 스크롤
+    sheetDrag = { y: ev.clientY, h: panel.offsetHeight, moved: false, id: ev.pointerId };
+  });
+  window.addEventListener('pointermove', function (ev) {
+    if (!sheetDrag || ev.pointerId !== sheetDrag.id) return;
+    var dy = ev.clientY - sheetDrag.y;
+    if (!sheetDrag.moved && Math.abs(dy) < 6) return;
+    if (!sheetDrag.moved) {  // 끌기 시작: 목록을 보이게 하고 높이를 손가락에 맞춘다
+      sheetDrag.moved = true;
+      root.dataset.sheetDrag = '1';
+      if (root.dataset.sheet === 'closed') root.dataset.sheet = 'open';
+      try { panel.setPointerCapture(ev.pointerId); } catch (e) { /* 합성 이벤트 등 */ }
+    }
+    var st = sheetStops(), h = Math.max(st.closed, Math.min(st.full, sheetDrag.h - dy));
+    panel.style.height = h + 'px';
+    if (!card.hidden) {
+      var up = Math.max(0, h - sheetDrag.h);
+      card.style.transform = 'translateY(' + (-up) + 'px)';
+      card.style.opacity = String(Math.max(0, 1 - up / 160));
+    }
+  });
+  function endSheetDrag(ev) {
+    if (!sheetDrag || ev.pointerId !== sheetDrag.id) return;
+    var moved = sheetDrag.moved;
+    sheetDrag = null;
+    root.dataset.sheetDrag = '';
+    if (!moved) return;  // 누름은 click이 처리한다
+    suppressSheetClick = true;
+    setTimeout(function () { suppressSheetClick = false; }, 0);
+    var h = panel.offsetHeight, st = sheetStops(), best = 'closed';
+    ['open', 'full'].forEach(function (k) { if (Math.abs(h - st[k]) < Math.abs(h - st[best])) best = k; });
+    if (!card.hidden) { if (best !== 'closed') { closeCard(false); } else { card.style.transform = ''; card.style.opacity = ''; } }
+    setSheet(best === 'closed' ? false : best === 'full' ? 'full' : true);
+  }
+  window.addEventListener('pointerup', endSheetDrag);
+  window.addEventListener('pointercancel', endSheetDrag);
+  panel.addEventListener('click', function (ev) {  // 끌고 난 뒤 손을 뗀 자리의 버튼은 눌리지 않게
+    if (suppressSheetClick) { ev.stopPropagation(); ev.preventDefault(); }
+  }, true);
+
+  /* 모바일 머리띠(v5): 지도 화면의 좁은 화면에서는 메뉴를 ☰ 버튼 안에 접는다(다른 화면은 그대로, CSS도 이 화면에만) */
+  (function () {
+    var inner = document.querySelector('.topbar-inner');
+    if (!inner || !inner.querySelector('nav, form')) return;
+    var mb = el('button', { type: 'button', 'class': 'rmap-menu-btn', 'aria-expanded': 'false', 'aria-label': '메뉴 열기', 'data-rmap-menu': '' });
+    mb.appendChild(el('span', { 'aria-hidden': 'true' }));
+    mb.addEventListener('click', function () {
+      var open = document.body.classList.toggle('rmap-menu-open');
+      mb.setAttribute('aria-expanded', String(open));
+      mb.setAttribute('aria-label', open ? '메뉴 닫기' : '메뉴 열기');
+      layout();
+    });
+    inner.appendChild(mb);
+  })();
 
   /* ---------- 전환(한 번만 만들고 상태만 바꾼다. 리뷰 18) ---------- */
   [['family', data.families], ['target', data.targets]].forEach(function (pair) {
@@ -307,7 +383,6 @@
     } else {
       miss.appendChild(el('p', { 'class': 'rmap-empty-note' }, '빠진 곳이 없습니다.'));
     }
-    body.appendChild(miss);
 
     var items = [];
     s.adopted_units.forEach(function (code) {
@@ -321,7 +396,8 @@
     } else {
       done.appendChild(el('p', { 'class': 'rmap-empty-note' }, '아직 도입한 곳이 없습니다.'));
     }
-    body.appendChild(done);
+    body.appendChild(done);  // 도입한 곳을 빠진 곳보다 위에(19:50 형우)
+    body.appendChild(miss);
   }
 
   function paint() {
@@ -343,6 +419,7 @@
     svg.querySelectorAll('.rmap-sido').forEach(function (p) {
       p.classList.toggle('is-selected', p.dataset.code === state.sido);
     });
+    liftSido();
     drawMarkers();
     drawBadges();
     if (root.dataset.zoom !== 'moving') drawLabels();
@@ -357,6 +434,18 @@
   /* 광역 배지(spec v4 1-A, 17:17 수정): 유리 알약 + 광역(의회) 기관 이름. 점 채움 = 도입. 세종·제주도 표시.
      전국 크기에서만 보이고, 시·도를 고르거나 확대하면 사라진다(그때는 광역 상태 카드로 본다).
      글자 크기가 확대와 무관하게 같도록 SVG 밖 HTML 층에 두고, 화면 좌표로 옮긴다 */
+  /* 고른 시·도는 테두리 대신 그림자(19:50 형우). 그 시·도 면들을 다른 면 위 묶음으로 옮기고, 바로 밑에 외곽선 모양 그림자를 깐다 */
+  var liftedSido = null;
+  function liftSido() {
+    if (!svg || liftedSido === state.sido) { if (svg && state.sido) shadowPath.setAttribute('d', sidoOutline(state.sido)); return; }
+    while (selLayer.firstChild) unitLayer.appendChild(selLayer.firstChild);
+    liftedSido = state.sido;
+    shadowPath.style.display = state.sido ? '' : 'none';
+    if (!state.sido) return;
+    unitLayer.querySelectorAll('.rmap-unit[data-sido="' + state.sido + '"]').forEach(function (p) { selLayer.appendChild(p); });
+    shadowPath.setAttribute('d', sidoOutline(state.sido));
+  }
+  function sidoOutline(code) { var o = svg.querySelector('.rmap-sido[data-code="' + code + '"]'); return o ? o.getAttribute('d') : ''; }
   function drawBadges() {
     var c = combo();
     badgeLayer.textContent = '';
@@ -364,11 +453,17 @@
       var info = sidoInfo(s.code);
       if (!info.label) return;
       var full = s.wide_count >= s.wide_slots, part = s.wide_count > 0 && !full;
-      // 누름은 받지 않는다(보류, 17:17). 밑의 면을 누르면 그 시·도로 간다. 같은 내용은 목록·광역 상태 카드에 있다
-      var b = el('span', { 'aria-hidden': 'true', 'class': 'rmap-badge' + (full ? ' is-in' : part ? ' is-part' : ''),
-                           'data-sido': s.code, 'data-state': full ? 'in' : part ? 'part' : 'out' });
-      b.appendChild(el('i', { 'class': 'rmap-badge-dot' }));
-      b.appendChild(document.createTextNode(wideName(s.code) + (s.wide_slots > 1 ? ' ' + s.wide_count + '/' + s.wide_slots : '')));
+      // 19:50 형우: 점 없이 배지를 색으로 채움(도입)/안 채움(미도입). 누르면 광역 기관 카드
+      var name = wideName(s.code) + (s.wide_slots > 1 ? ' ' + s.wide_count + '/' + s.wide_slots : '');
+      var b = el('span', { role: 'button', tabindex: '0', 'class': 'rmap-badge' + (full ? ' is-in' : part ? ' is-part' : ''),
+                           'data-sido': s.code, 'data-state': full ? 'in' : part ? 'part' : 'out',
+                           'aria-label': name + ' ' + (full ? '도입' : part ? '일부 도입' : '미도입') + ', 누르면 광역 기관 카드' }, name);
+      b.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        if (suppressClick) { suppressClick = false; return; }  // 배지 위에서 시작해 끈 것은 누름이 아니다
+        openWideCard(s.code, b);
+      });
+      b.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openWideCard(s.code, b); } });
       badgeLayer.appendChild(b);
     });
     badgeLayer.hidden = !!state.sido || zoomedIn();
@@ -512,7 +607,14 @@
     if (narrow.matches) { setSheet(false); } else { place(card, x, y); }  // 좁은 화면은 아래에 고정(CSS)
     close.focus({ preventScroll: true });
   }
+  /* 누른 시군구는 카드가 열려 있는 동안 마우스를 올렸을 때 색을 유지한다(20:20 형우) */
+  function setPicked(code) {
+    if (!svg) return;
+    svg.querySelectorAll('.rmap-unit.is-picked').forEach(function (p) { p.classList.remove('is-picked'); });
+    if (code) { var u = svg.querySelector('.rmap-unit[data-code="' + code + '"]'); if (u) u.classList.add('is-picked'); }
+  }
   function openCard(code, x, y) {
+    setPicked(code);
     var c = combo(), slot = c.units[code] || { state: 'out', orgs: [], facilities: [] }, u = data.units[code];
     var close = cardShell();
     if (slot.state === 'in') {
@@ -540,6 +642,24 @@
     var r = panel.getBoundingClientRect(), b = opener.getBoundingClientRect();
     return [r.right + 2, b.top];
   }
+  /* 광역 배지를 누르면: 그 시·도의 광역 기관(세종·제주는 그 면의 기관) 카드. 빈 칸은 미도입 */
+  function openWideCard(code, opener) {
+    var c = combo(), s = sidoRow(code), council = state.target === 'council';
+    var orgs = s.whole ? ((c.units[s.adopted_units.concat(s.missing)[0]] || {}).orgs || []) : s.wide_orgs;
+    var close = cardShell();
+    card.appendChild(el('p', { 'class': 'rmap-card-unit' }, s.name + (council ? ' 광역의회' : ' 광역 기관')));
+    orgs.slice(0, s.wide_slots).forEach(function (o) { card.appendChild(cardOrg(o)); });
+    for (var i = Math.min(orgs.length, s.wide_slots); i < s.wide_slots; i++) {
+      var out = el('p', { 'class': 'rmap-card-out', 'data-field': 'name' }, wideName(code));
+      out.appendChild(el('span', { 'data-field': 'status' }, '미도입'));
+      card.appendChild(out);
+    }
+    card.dataset.unit = '';
+    card.dataset.wide = code;
+    var r = opener.getBoundingClientRect();
+    showCard(close, r.left + r.width / 2 - 14, r.bottom - 6);
+    cardOpener = opener;
+  }
   function openOrgsCard(opener, title, orgs) {
     var close = cardShell(), at = besidePanel(opener);
     cardOpener = opener;
@@ -557,6 +677,9 @@
     if (card.hidden) return;
     card.hidden = true;
     card.dataset.unit = '';
+    card.dataset.wide = '';
+    setPicked(null);
+    card.style.transform = ''; card.style.opacity = '';
     if (returnFocus && cardOpener && document.body.contains(cardOpener)) cardOpener.focus({ preventScroll: true });
     cardOpener = null;
   }
@@ -573,7 +696,7 @@
     var z = zoomedIn();
     root.dataset.zoomed = z ? '1' : '';
     // 전국 크기에서는 한 손가락으로 페이지가 스크롤되게(pan-y), 확대했으면 지도가 손가락을 받는다
-    svg.style.touchAction = z ? 'none' : 'pan-y';
+    svg.style.touchAction = 'none';  // 20:07 형우: 전국 크기에서도 끌어서 지도를 옮긴다(지도 위 한 손가락 = 지도 이동)
   }
   /* 지도는 화면 전체(패널·상단 띠 밑까지)에 그리고, 보여줄 범위 b는 패널·띠를 뺀 빈 곳(캔버스 안쪽 여백 안)에 맞춘다.
      그래서 확대·이동하면 지도가 유리 패널 밑으로 지나간다 */
@@ -584,7 +707,15 @@
     var fw = Math.max(80, W - pl - pr), fh = Math.max(80, H - pt - pb), k = Math.min(fw / b[2], fh / b[3]);
     return [b[0] + b[2] / 2 - (pl + fw / 2) / k, b[1] + b[3] / 2 - (pt + fh / 2) / k, W / k, H / k];
   }
-  function nationalBox() { return fitBox(geo.viewBox); }
+  /* 전국 보기 범위: 데스크톱은 울릉·독도까지 넣은 전체(19:50 형우: 데스크톱은 원래대로).
+     폰은 본토(울릉·독도 뺀 0~884)를 화면 가운데 쯤에 둔다(19:50: 왼쪽으로 쏠려 보임 → 20:05: 너무 오른쪽, 살짝 왼쪽으로).
+     서해 섬들이 왼쪽 끝을 넓혀 정가운데면 오른쪽으로 보이므로 범위를 64만큼 오른쪽으로 잡아 지도를 약 26px 왼쪽으로(20:07: 10px 더). 울릉·독도는 옮기면 보인다 */
+  var MAINLAND = [64, 0, 884, 1210];
+  var natCache = null;  // 손가락이 움직일 때마다 화면 배치를 다시 재지 않도록, 배치가 바뀔 때(layout)만 새로 잰다
+  function nationalBox() {
+    if (!natCache) natCache = fitBox(narrow.matches ? MAINLAND : geo.viewBox);
+    return natCache.slice();
+  }
   function targetBox(code) {
     if (!code) return nationalBox();
     var b = sidoBox[code], w = b[2] - b[0], h = b[3] - b[1], pad = Math.max(w, h) * 0.08 + 6;
@@ -618,6 +749,7 @@
         });
         var o = svg.querySelector('.rmap-sido[data-code="' + code + '"]');
         if (o) o.setAttribute('d', d.outline);
+        if (state.sido === code) shadowPath.setAttribute('d', d.outline);
         drawMarkers();
         root.dataset.detail = (root.dataset.detail ? root.dataset.detail + ',' : '') + code;
       })
@@ -647,11 +779,16 @@
   /* 전국보다 넓게는 못 줄이고, 14배보다 크게는 못 키운다. 가운데는 전국 범위 안에 둔다 */
   function clampBox(vb) {
     var N = nationalBox(), g = geo.viewBox, k = vb[2] / N[2], w = vb[2], h = vb[3];
-    if (k >= 0.999) return N;  // 전국 크기보다 줄이면 늘 전국 보기로
+    if (k > 1.001) return N;  // 전국 크기보다 줄이면 전국 보기로(전국 크기에서 끌어 옮기는 것은 아래에서 허용, 20:07)
     if (k < 1 / MAX_ZOOM) { w *= 1 / (MAX_ZOOM * k); h *= 1 / (MAX_ZOOM * k); }
     var cx = Math.min(g[0] + g[2], Math.max(g[0], vb[0] + vb[2] / 2));
     var cy = Math.min(g[1] + g[3], Math.max(g[1], vb[1] + vb[3] / 2));
     return [cx - w / 2, cy - h / 2, w, h];
+  }
+  /* 확대했거나, 전국 크기라도 끌어서 옮겼으면 true(바다 누르기·Esc로 제자리) */
+  function awayFromNational() {
+    var N = nationalBox();
+    return zoomedIn() || Math.abs(viewBox[0] - N[0]) > 1 || Math.abs(viewBox[1] - N[1]) > 1;
   }
   function zoomAt(factor, x, y) {
     if (!svg) return;
@@ -691,36 +828,56 @@
       var unit = ev.deltaMode === 1 ? 0.05 : 0.0018;
       zoomAt(Math.exp(-ev.deltaY * unit), ev.clientX, ev.clientY);
     }, { passive: false });
-    svg.addEventListener('pointerdown', function (ev) {
+    /* 20:10 형우(폰에서 확대할 때 오류) 점검 뒤 고침:
+       - 손가락을 지도 영역 어디(배지·이름 위 포함)에 대도 지도가 받는다. 전엔 배지 위에서 시작하면 브라우저가 페이지 전체를 확대했다
+       - 움직임은 화면 한 번 그릴 때(프레임) 한 번만 반영하고, 손가락 수가 바뀌면 기준을 다시 잡아 튀지 않게 한다 */
+    var gest = null, frameReq = null;
+    function snapshot() {
+      var ids = Object.keys(pointers);
+      if (ids.length >= 2) {
+        var a = pointers[ids[0]], b = pointers[ids[1]];
+        return { n: 2, d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+      }
+      if (ids.length === 1) { var p0 = pointers[ids[0]]; return { n: 1, x: p0.x, y: p0.y }; }
+      return null;
+    }
+    function applyGesture() {
+      frameReq = null;
+      var now = snapshot();
+      if (!now || !gest || now.n !== gest.n) { gest = now; return; }
+      if (now.n === 2) {
+        dragMoved = true;
+        if (gest.d > 0 && now.d > 0) zoomAt(now.d / gest.d, now.mx, now.my);
+        panBy(now.mx - gest.mx, now.my - gest.my);
+      } else {
+        var me = pointers[Object.keys(pointers)[0]];
+        if (!dragMoved && Math.hypot(me.x - me.sx, me.y - me.sy) < 5) return;  // 손떨림은 누름으로 본다(기준은 그대로)
+        dragMoved = true;
+        root.dataset.dragging = '1';
+        panBy(now.x - gest.x, now.y - gest.y);
+      }
+      gest = now;
+    }
+    function flush() { if (frameReq) { cancelAnimationFrame(frameReq); applyGesture(); } }
+    canvas.addEventListener('pointerdown', function (ev) {
       if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+      if (ev.target.closest('.rmap-zoom, .rmap-error')) return;
+      flush();
       pointers[ev.pointerId] = { x: ev.clientX, y: ev.clientY, sx: ev.clientX, sy: ev.clientY, type: ev.pointerType };
       if (Object.keys(pointers).length === 1) dragMoved = false;
+      gest = snapshot();
     });
     window.addEventListener('pointermove', function (ev) {
       var me = pointers[ev.pointerId];
       if (!me) return;
-      var ids = Object.keys(pointers);
-      if (ids.length >= 2) {  // 두 손가락: 벌리면 확대, 같이 움직이면 이동
-        var a = pointers[ids[0]], b = pointers[ids[1]];
-        var d0 = Math.hypot(a.x - b.x, a.y - b.y), mx0 = (a.x + b.x) / 2, my0 = (a.y + b.y) / 2;
-        me.x = ev.clientX; me.y = ev.clientY;
-        var d1 = Math.hypot(a.x - b.x, a.y - b.y), mx1 = (a.x + b.x) / 2, my1 = (a.y + b.y) / 2;
-        dragMoved = true;
-        if (d0 > 0) zoomAt(d1 / d0, mx1, my1);
-        if (zoomedIn()) panBy(mx1 - mx0, my1 - my0);
-        return;
-      }
-      var dx = ev.clientX - me.x, dy = ev.clientY - me.y;
       me.x = ev.clientX; me.y = ev.clientY;
-      if (!dragMoved && Math.hypot(ev.clientX - me.sx, ev.clientY - me.sy) < 5) return;
-      if (!zoomedIn()) return;  // 전국 크기에서는 끌어도 움직이지 않는다(터치는 페이지 스크롤)
-      dragMoved = true;
-      root.dataset.dragging = '1';
-      panBy(dx, dy);
+      if (!frameReq) frameReq = requestAnimationFrame(applyGesture);
     });
     function release(ev) {
       if (!pointers[ev.pointerId]) return;
+      flush();
       delete pointers[ev.pointerId];
+      gest = snapshot();
       if (!Object.keys(pointers).length) {
         root.dataset.dragging = '';
         if (dragMoved) { suppressClick = true; setTimeout(function () { suppressClick = false; }, 0); }
@@ -728,6 +885,10 @@
     }
     window.addEventListener('pointerup', release);
     window.addEventListener('pointercancel', release);
+    // iOS 사파리: 지도 위 두 손가락은 페이지 확대가 아니라 지도 확대로
+    ['gesturestart', 'gesturechange'].forEach(function (t) {
+      stage.addEventListener(t, function (ev) { ev.preventDefault(); }, { passive: false });
+    });
   }
   function zoomControls() {
     zoomBox = el('div', { 'class': 'rmap-zoom', role: 'group', 'aria-label': '지도 확대' });
@@ -749,6 +910,10 @@
     var show = svg && (state.sido || zoomedIn()) && root.dataset.zoom !== 'moving';
     labelLayer.hidden = !show;
     if (!show) return;
+    // 글씨 크기는 확대 정도를 따라 10~16px(폰은 1px 작게). 2배 확대마다 2px씩(19:32 형우)
+    var z = nationalBox()[2] / viewBox[2];
+    var fs = Math.max(10, Math.min(16, 10 + 2 * Math.log2(Math.max(1, z)))) - (narrow.matches ? 1 : 0);
+    labelLayer.style.fontSize = fs.toFixed(1) + 'px';
     var m = svg.getScreenCTM(), cr = canvas.getBoundingClientRect(), pt = svg.createSVGPoint(), vb = viewBox;
     var placed = [panel, bar, zoomBox].filter(Boolean).map(function (n) {
       var r = n.getBoundingClientRect();
@@ -780,7 +945,7 @@
     svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
     svg.setAttribute('role', 'img');
     svg.setAttribute('aria-label', '시군구 지도. 목록에서 시·도와 기관을 고를 수 있습니다.');
-    var units = document.createElementNS(SVG, 'g');
+    var units = unitLayer = document.createElementNS(SVG, 'g');
     g.units.forEach(function (u) {
       var p = document.createElementNS(SVG, 'path');
       p.setAttribute('d', u.d);
@@ -799,7 +964,18 @@
     });
     facLayer = document.createElementNS(SVG, 'g');
     facLayer.setAttribute('class', 'rmap-facs');
-    svg.appendChild(units); svg.appendChild(sido); svg.appendChild(facLayer);
+    // 그림자는 SVG 필터로 그린다(20:20 형우: 폰에서 안 보임 — 아이폰 사파리는 SVG 도형에 CSS drop-shadow를 그리지 않는다)
+    var defs = document.createElementNS(SVG, 'defs');
+    defs.innerHTML = '<filter id="rmap-shadow" x="-20%" y="-20%" width="140%" height="140%">' +
+      '<feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#122644" flood-opacity="0.35"/></filter>';
+    svg.appendChild(defs);
+    shadowPath = document.createElementNS(SVG, 'path');
+    shadowPath.setAttribute('class', 'rmap-sido-shadow');
+    shadowPath.setAttribute('filter', 'url(#rmap-shadow)');
+    shadowPath.style.display = 'none';
+    selLayer = document.createElementNS(SVG, 'g');
+    selLayer.setAttribute('class', 'rmap-selected');
+    svg.appendChild(units); svg.appendChild(shadowPath); svg.appendChild(selLayer); svg.appendChild(sido); svg.appendChild(facLayer);
     function hit(target) {
       var n = target.closest('.rmap-unit, .rmap-fac');
       return n ? { code: n.dataset.code, marker: n.classList.contains('rmap-fac') } : null;
@@ -809,7 +985,7 @@
       var h = hit(ev.target);
       if (!h) {  // 바다를 누르면 전국으로(17:00 형우)
         closeCard(false);
-        if (state.sido) { selectSido(null, false, state.sido); } else if (zoomedIn()) { zoomTo(nationalBox()); }
+        if (state.sido) { selectSido(null, false, state.sido); } else if (awayFromNational()) { zoomTo(nationalBox()); }
         return;
       }
       var sidoCode = data.units[h.code].sido;
@@ -842,7 +1018,7 @@
   document.addEventListener('keydown', function (ev) {
     if (ev.key !== 'Escape') return;
     if (!card.hidden) { closeCard(true); return; }   // 카드가 열려 있으면 카드만 닫는다
-    if (state.sido) { selectSido(null, true, state.sido); } else if (zoomedIn()) { zoomTo(nationalBox()); }
+    if (state.sido) { selectSido(null, true, state.sido); } else if (awayFromNational()) { zoomTo(nationalBox()); }
   });
   document.addEventListener('pointerdown', function (ev) {
     if (card.hidden || card.contains(ev.target) || (svg && svg.contains(ev.target)) || panel.contains(ev.target)) return;
