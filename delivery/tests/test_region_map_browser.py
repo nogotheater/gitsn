@@ -27,7 +27,8 @@ class RegionMapBrowserScenarios(StaticLiveServerTestCase):
                                               ('전남광주통합특별시 광주청사', Category.LOCAL, '12', 'admin', s),
                                               ('전남광주통합특별시 무안청사', Category.LOCAL, '12', 'admin', s),
                                               ('공주 어떤 시설', Category.LOCAL, '44150', 'facility', c),
-                                              ('충청남도 산림자원연구소', Category.LOCAL, '44', 'facility', c)]:
+                                              ('충청남도 산림자원연구소', Category.LOCAL, '44', 'facility', c),
+                                              ('소재지 없는 군청', Category.LOCAL, '', '', s)]:
             cu = Customer.objects.create(organization=Organization.objects.create(official_name=name), category=cat,
                                          region=Region.CHUNGCHEONG, partner_public=True, location_code=loc, institution_type=kind)
             k = Contract.objects.create(customer=cu, contracting_party=cu.organization, is_active=True, contract_date=date(2021, 1, 1))
@@ -252,5 +253,28 @@ class RegionMapBrowserScenarios(StaticLiveServerTestCase):
                         .filter(([, h]) => h < 44)""")
                     self.assertEqual(small, [], f'{width}px 44px 미만 버튼')
                     page.close()
+            finally:
+                browser.close()
+
+
+    def test_empty_states_and_unassigned_notice(self):
+        with sync_playwright() as engine:
+            browser = engine.chromium.launch()
+            try:
+                page = browser.new_page(viewport={'width': 1440, 'height': 900})
+                self.open_map(page)
+                # 소재지가 빈 기관은 칠하지 않고 따로 알린다
+                notice = page.locator('[data-rmap-unassigned]')
+                expect(notice).to_be_visible()
+                expect(notice).to_contain_text('소재지 없는 군청')
+                expect(notice).to_contain_text('1곳')
+                # 도입 0곳인 시·도: 빠진 곳 = 전체, '아직 도입한 곳이 없습니다'
+                page.locator('.rmap-sido-row[data-sido="26"]').click()
+                expect(page.locator('[data-rmap-national] strong')).to_have_text('0')
+                expect(page.locator('[data-rmap-missing] li')).to_have_count(16)
+                expect(page.locator('.rmap-section', has_text='도입한 곳')).to_contain_text('아직 도입한 곳이 없습니다')
+                expect(page.locator('[data-rmap-wide]')).to_contain_text('미도입')
+                # 상단 메뉴의 '지역 현황'은 지금 화면 표시
+                expect(page.locator('nav a[aria-current="page"]')).to_have_text('지역 현황')
             finally:
                 browser.close()

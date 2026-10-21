@@ -28,3 +28,10 @@ class RegionMapAccessScenarios(TestCase):
         r = self.client.get('/performance/map/')
         self.assertEqual(r.status_code, 302)
         self.assertIn('/login/', r['Location'])
+
+
+    def test_menu_link_only_for_employees(self):
+        self.client.force_login(self.user('rm-employee-2', 'employee'))
+        self.assertContains(self.client.get('/performance/'), 'href="/performance/map/"')
+        self.client.force_login(self.user('rm-partner-2', 'partner'))
+        self.assertNotContains(self.client.get('/performance/'), 'href="/performance/map/"')

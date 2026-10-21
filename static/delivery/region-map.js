@@ -121,6 +121,15 @@
       list.appendChild(li);
     });
     body.appendChild(list);
+    if (c.unassigned.length) {
+      var un = section('지도에 올리지 못한 기관', c.unassigned.length);
+      un.setAttribute('data-rmap-unassigned', '');
+      un.appendChild(el('p', { 'class': 'rmap-empty-note' }, '소재지가 비어 있어 지도에 칠하지 못했습니다. 고객사 관리에서 소재지를 정하면 지도에 나옵니다.'));
+      var ul = el('ul', { 'class': 'rmap-orgs' });
+      c.unassigned.forEach(function (o) { ul.appendChild(orgRow(o)); });
+      un.appendChild(ul);
+      body.appendChild(un);
+    }
   }
 
   function renderSido() {
