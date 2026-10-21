@@ -43,6 +43,9 @@ class RegionMapBrowserScenarios(StaticLiveServerTestCase):
         return set(page.eval_on_selector_all('.rmap-unit.is-in', 'els => els.map(e => e.dataset.code)'))
 
     def test_map_draws_229_units_and_paints_from_the_service(self):
+        # DB 조회는 브라우저(비동기 루프)를 띄우기 전에 한다
+        expected = {code for code, slot in region_map_payload()['combos']['eavesdrop:local']['units'].items()
+                    if slot['state'] == 'in'}
         with sync_playwright() as engine:
             browser = engine.chromium.launch()
             try:
@@ -50,8 +53,6 @@ class RegionMapBrowserScenarios(StaticLiveServerTestCase):
                 self.open_map(page)
                 expect(page.locator('.rmap-unit')).to_have_count(229)
                 expect(page.locator('.rmap-sido')).to_have_count(16)
-                expected = {code for code, slot in region_map_payload()['combos']['eavesdrop:local']['units'].items()
-                            if slot['state'] == 'in'}
                 self.assertEqual(self.painted(page), expected)
                 self.assertEqual(expected, {'44130'})
             finally:
