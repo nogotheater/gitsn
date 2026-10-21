@@ -18,15 +18,24 @@ fam = {f['key']: f['label'] for f in p['families']}
 tgt = {t['key']: t['label'] for t in p['targets']}
 print(f'지역 현황 지도 점검표 · {basis_date():%Y.%m.%d} 기준')
 for key, combo in p['combos'].items():
-    print(f"  전국 {fam[key.split(':')[0]]} × {tgt[key.split(':')[1]]}: 도입 {combo['national']['adopted']} / {combo['national']['total']}"
+    n = combo['national']
+    print(f"  전국 {fam[key.split(':')[0]]} × {tgt[key.split(':')[1]]}: 전체 {n['adopted']} / {n['total']}"
+          f" (광역 {n['wide']['adopted']} / {n['wide']['total']}, 기초 {n['basic']['adopted']} / {n['basic']['total']})"
           f", 지도에 올리지 못한 기관 {len(combo['unassigned'])}")
+for key, combo in p['combos'].items():
+    f, t = key.split(':')
+    rows = [s['short'] for s in combo['sido'] if s['wide_adopted']]
+    print(f"  광역 도입 {fam[f]} × {tgt[t]}: " + (', '.join(rows) or '없음'))
 for code in codes:
     for key, combo in p['combos'].items():
         s = [x for x in combo['sido'] if x['code'] == code][0]
         f, t = key.split(':')
         print(f"\n■ {s['name']} · {fam[f]} × {tgt[t]} — 도입 {s['adopted']} / {s['total']}")
-        wide = ', '.join(o['name'] for o in s['wide_orgs']) or '미도입'
-        print(f"  광역: {wide}")
+        if s['whole']:  # 세종·제주: 그 한 면이 곧 광역
+            print(f"  광역: {'도입' if s['wide_adopted'] else '미도입'} (이 면이 곧 광역, 기초 없음)")
+        else:
+            wide = ', '.join(o['name'] for o in s['wide_orgs']) or '미도입'
+            print(f"  광역: {wide}")
         if s['wide_facilities']:
             print('  광역 시설·공기업: ' + ', '.join(o['name'] for o in s['wide_facilities']))
         for u in s['adopted_units']:

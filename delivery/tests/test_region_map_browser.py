@@ -93,6 +93,10 @@ class RegionMapBrowserScenarios(StaticLiveServerTestCase):
                 expect(page.locator('.rmap-sido')).to_have_count(16)
                 self.assertEqual(self.painted(page), expected)
                 self.assertEqual(expected, {'44130'})
+                # 전국 숫자: 광역(충남 1 + 전남광주 두 청사 2) 3 + 기초(천안) 1 = 4 / 244
+                expect(page.locator('[data-rmap-national]')).to_have_text('4/ 244')
+                expect(page.locator('[data-rmap-part="wide"]')).to_contain_text('3 / 17')
+                expect(page.locator('[data-rmap-part="basic"]')).to_contain_text('1 / 227')
             finally:
                 browser.close()
 
@@ -133,6 +137,10 @@ class RegionMapBrowserScenarios(StaticLiveServerTestCase):
                         expected = {c for c, s in combo['units'].items() if s['state'] == 'in'}
                         self.assertEqual(self.painted(page), expected, f'{family}:{target}')
                         expect(page.locator('[data-rmap-national] strong')).to_have_text(str(combo['national']['adopted']))
+                        # 전국 = 광역 + 기초, 아래에 두 줄로 나눔(spec v4 7)
+                        for part in ('wide', 'basic'):
+                            n = combo['national'][part]
+                            expect(page.locator(f'[data-rmap-part="{part}"] [data-part-value]')).to_have_text(f"{n['adopted']} / {n['total']}")
                         rows = page.eval_on_selector_all('.rmap-sido-row', 'els => els.map(e => [e.dataset.sido, e.querySelector(".rmap-sido-count").textContent])')
                         self.assertEqual([r[0] for r in rows], sido_order)  # 행정코드 순(순위 아님)
                         self.assertEqual([r[1] for r in rows], [f"{s['adopted']} / {s['total']}" for s in combo['sido']])
@@ -227,7 +235,12 @@ class RegionMapBrowserScenarios(StaticLiveServerTestCase):
                 self.click_unit(page, '.rmap-unit[data-code="44130"]')
                 expect(card).to_be_visible()
                 fields = page.eval_on_selector_all('[data-rmap-card] [data-field]', 'els => els.map(e => [e.dataset.field, e.textContent])')
-                self.assertEqual(fields, [['name', '천안시'], ['family', '도청 보안'], ['products', 'Alpha-S'], ['year', '2021']])
+                # spec v4 6: 제품명 대신 마킹 글자(S). 제품명은 보이지 않는다
+                self.assertEqual(fields, [['name', '천안시'], ['family', '도청 보안'], ['marks', 'S'], ['year', '2021']])
+                self.assertNotIn('Alpha-S', card.inner_text())
+                self.assertNotIn('Alpha-S', page.locator('[data-rmap-panel]').inner_text())
+                # 제품군 색: 도청 보안 = 파랑 #4E7CC7
+                expect(page.locator('.rmap-unit[data-code="44130"]')).to_have_css('fill', 'rgb(78, 124, 199)')
                 expect(page.locator('[data-rmap-card] .rmap-symbol')).to_have_text('천')  # 심볼이 없으면 글자 타일
                 text = card.inner_text()
                 for unexpected in ('대', '수량', '금액', '연락처'):
@@ -256,6 +269,8 @@ class RegionMapBrowserScenarios(StaticLiveServerTestCase):
                 expect(page.locator('.rmap-fac')).to_have_count(0)
                 expect(page.locator('[data-rmap-legend-fac]')).to_be_hidden()
                 page.locator('[data-rmap-switch="family"] button[data-value="camera"]').click()
+                # 불법촬영 보안 = 코랄 #EA6759 (아산시 C 도입)
+                expect(page.locator('.rmap-unit[data-code="44200"]')).to_have_css('fill', 'rgb(234, 103, 89)')
                 expect(page.locator('.rmap-fac')).to_have_count(1)
                 expect(page.locator('.rmap-fac')).to_have_attribute('data-code', '44150')
                 expect(page.locator('[data-rmap-legend-fac]')).to_be_visible()
@@ -277,7 +292,194 @@ class RegionMapBrowserScenarios(StaticLiveServerTestCase):
                 page.keyboard.press('Escape')
                 expect(root).to_have_attribute('data-sido', '')
                 expect(root).to_have_attribute('data-zoom', 'done')
-                self.assertGreaterEqual(page.locator('.rmap-fac').bounding_box()['width'], 13.5)
+                fac_w = page.locator('.rmap-fac').bounding_box()['width']
+                self.assertGreaterEqual(fac_w, 13.5)
+                self.assertLessEqual(fac_w, 17)  # 18:03: 지도를 화면 전체로 넓힌 뒤 커지던 문제 — 화면에서 늘 같은 크기
+            finally:
+                browser.close()
+
+    def test_wide_badges_and_status_cards(self):
+        # spec v4 1(A+D): 지도 위 광역 배지와 시·도 화면의 광역 상태 카드
+        payload = region_map_payload()  # 브라우저 전에 계산
+        with sync_playwright() as engine:
+            browser = engine.chromium.launch()
+            try:
+                page = browser.new_page(viewport={'width': 1440, 'height': 900})
+                self.open_map(page)
+                for family, target, word in (('eavesdrop', 'local', '광역'), ('camera', 'local', '광역'),
+                                             ('eavesdrop', 'council', '의회'), ('camera', 'council', '의회')):
+                    page.locator(f'[data-rmap-switch="family"] button[data-value="{family}"]').click()
+                    page.locator(f'[data-rmap-switch="target"] button[data-value="{target}"]').click()
+                    rows = payload['combos'][f'{family}:{target}']['sido']
+                    expected = {r['code']: ('in' if r['wide_count'] >= r['wide_slots'] else 'part' if r['wide_count'] else 'out')
+                                for r in rows}
+                    got = dict(page.eval_on_selector_all('.rmap-badge[data-sido]', 'els => els.map(e => [e.dataset.sido, e.dataset.state])'))
+                    self.assertEqual(got, expected, f'{family}:{target}')  # 17:17 세종·제주 포함 16개
+                    names = page.eval_on_selector_all('.rmap-badge[data-sido]', 'els => els.map(e => e.textContent)')
+                    self.assertEqual(all(n.split(' ')[0].endswith('의회') for n in names), word == '의회')
+                    overlap = page.evaluate('''() => { const r = [...document.querySelectorAll('.rmap-badge[data-sido]')].map(b => [b.dataset.sido, b.getBoundingClientRect()]);
+                        const o = []; for (let i = 0; i < r.length; i++) for (let j = i + 1; j < r.length; j++) { const a = r[i][1], b = r[j][1];
+                        if (a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom) o.push(r[i][0] + '-' + r[j][0]); } return o; }''')
+                    self.assertEqual(overlap, [], f'{family}:{target} 배지 겹침')
+                # 지자체 도청: 충남 도입, 전남광주는 두 청사 모두 → '광역 2/2', 경기 미도입
+                page.locator('[data-rmap-switch="family"] button[data-value="eavesdrop"]').click()
+                page.locator('[data-rmap-switch="target"] button[data-value="local"]').click()
+                expect(page.locator('.rmap-badge[data-sido="44"]')).to_have_attribute('data-state', 'in')
+                expect(page.locator('.rmap-badge[data-sido="12"]')).to_have_text('전남광주 2/2')
+                expect(page.locator('.rmap-badge[data-sido="44"]')).to_have_text('충남도')
+                expect(page.locator('.rmap-badge[data-sido="11"]')).to_have_text('서울시')
+                expect(page.locator('.rmap-badge[data-sido="36"]')).to_have_text('세종시')
+                expect(page.locator('.rmap-badge[data-sido="41"]')).to_have_attribute('data-state', 'out')
+                # 배지가 화면에서 그 시·도 안에 있다
+                box = page.locator('.rmap-badge[data-sido="44"]').bounding_box()
+                hit = page.evaluate('([x, y]) => { const e = document.elementsFromPoint(x, y).find(n => n.classList && n.classList.contains("rmap-unit")); return e && e.dataset.sido; }',
+                                    [box['x'] + box['width'] / 2, box['y'] + box['height'] / 2])
+                self.assertEqual(hit, '44')
+                # 시·도 화면: 광역 상태 카드
+                page.locator('.rmap-sido-row[data-sido="44"]').click()
+                card = page.locator('[data-rmap-wide-card="in"]')
+                expect(card).to_have_count(1)
+                expect(card).to_contain_text('충청남도')
+                expect(card.locator('[data-field="status"]')).to_have_text('도입')
+                expect(card.locator('.rmap-mark')).to_have_text('S')
+                expect(page.locator('.rmap-badges')).to_be_hidden()  # 시·도를 고르면(확대) 배지는 사라지고 카드로 본다
+                page.locator('[data-rmap-back]').click()
+                page.locator('.rmap-sido-row[data-sido="26"]').click()
+                out = page.locator('[data-rmap-wide-card="out"]')
+                expect(out).to_have_count(1)
+                expect(out).to_contain_text('부산광역시')
+                expect(out.locator('[data-field="status"]')).to_have_text('미도입')
+                # 광역 보기(17:34): 시·도 전체 면을 광역 도입으로, 2칸 중 1칸은 흐리게. 목록은 광역 기관 카드. 기초 = 원래 보기
+                page.locator('[data-rmap-back]').click()
+                expect(page.locator('.rmap-badges')).to_be_visible()
+                p = payload['combos']['eavesdrop:local']
+                wide_btn, basic_btn = page.locator('[data-rmap-part="wide"]'), page.locator('[data-rmap-part="basic"]')
+                wide_btn.click()
+                expect(wide_btn).to_have_attribute('aria-pressed', 'true')
+                expect(page.locator('[data-rmap-national] strong')).to_have_text(str(p['national']['wide']['adopted']))
+                full = {r['code'] for r in p['sido'] if r['wide_count'] >= r['wide_slots']}
+                units = payload['units']
+                self.assertEqual(self.painted(page), {c for c, u in units.items() if u['sido'] in full})  # 충남·전남광주 전체 면
+                expect(page.locator('.rmap-badges')).to_be_visible()
+                cards = page.locator('[data-rmap-wide-list] [data-rmap-wide-card]')
+                expect(cards).to_have_count(p['national']['wide']['total'])  # 17칸
+                expect(page.locator('[data-rmap-wide-list] [data-rmap-wide-card="in"]')).to_have_count(p['national']['wide']['adopted'])
+                expect(page.locator('[data-rmap-wide-list] [data-rmap-wide-card="in"][data-sido="44"] .rmap-mark')).to_have_text('S')
+                expect(page.locator('.rmap-sido-row')).to_have_count(0)  # 막대 목록 대신 카드
+                basic_btn.click()  # 기초 = 원래 보기로, 눌린 상태는 남기지 않는다
+                expect(wide_btn).to_have_attribute('aria-pressed', 'false')
+                self.assertIsNone(basic_btn.get_attribute('aria-pressed'))
+                expect(page.locator('[data-rmap-national] strong')).to_have_text(str(p['national']['adopted']))
+                expect(page.locator('.rmap-badges')).to_be_visible()
+                expect(page.locator('.rmap-sido-row')).to_have_count(16)
+                self.assertEqual(self.painted(page), {'44130'})
+                # 광역 보기에서 카드를 누르면 그 시·도로(광역 보기는 꺼진다)
+                wide_btn.click()
+                page.locator('[data-rmap-wide-list] [data-sido="44"]').click()
+                expect(page.locator('[data-rmap]')).to_have_attribute('data-sido', '44')
+                self.assertEqual(self.painted(page), {'44130'})
+            finally:
+                browser.close()
+
+    def test_free_zoom_sea_click_labels_and_hover(self):
+        # 11d(형우 16:00~17:50): 휠·끌기·두 손가락·−/+·전국, 바다 → 전국, 확대하면 시군구 이름, 마우스 올리면 면 색만 바뀜
+        sea = '''() => { const s = document.querySelector('[data-rmap-canvas] svg'), r = s.getBoundingClientRect();
+            for (let i = 1; i < 30; i++) for (let j = 1; j < 30; j++) { const x = r.x + r.width * i / 30, y = r.y + r.height * j / 30;
+              if (document.elementFromPoint(x, y) === s) return [x, y]; } return null; }'''
+        vbw = '() => +document.querySelector("[data-rmap-canvas] svg").getAttribute("viewBox").split(" ")[2]'
+        with sync_playwright() as engine:
+            browser = engine.chromium.launch()
+            try:
+                page = browser.new_page(viewport={'width': 1440, 'height': 900})
+                self.open_map(page)
+                root, svg = page.locator('[data-rmap]'), page.locator('[data-rmap-canvas] svg')
+                expect(svg).to_have_css('touch-action', 'pan-y')  # 전국 크기: 한 손가락은 페이지 스크롤
+                # 마우스를 올리면 면 색만 진해지고 테두리 두께는 그대로
+                xy = page.evaluate(POINT_INSIDE, '.rmap-unit[data-code="47130"]')
+                page.mouse.move(*xy)
+                expect(page.locator('.rmap-unit[data-code="47130"]')).to_have_css('fill', 'rgb(188, 199, 211)')
+                expect(page.locator('.rmap-unit[data-code="47130"]')).to_have_css('stroke-width', '0.7px')
+                # 휠 확대: 보기만 바뀌고 패널은 그대로. 광역 배지는 사라지고 시군구 이름이 나온다
+                w0 = page.evaluate(vbw)
+                box = svg.bounding_box()
+                page.mouse.move(box['x'] + box['width'] * 0.6, box['y'] + box['height'] * 0.35)
+                for _ in range(5):
+                    page.mouse.wheel(0, -240)
+                expect(root).to_have_attribute('data-zoomed', '1')
+                self.assertLess(page.evaluate(vbw), w0 / 2)
+                expect(root).to_have_attribute('data-sido', '')
+                expect(page.locator('.rmap-sido-row')).to_have_count(16)
+                expect(page.locator('.rmap-badges')).to_be_hidden()
+                expect(page.locator('.rmap-label').first).to_be_visible()
+                expect(svg).to_have_css('touch-action', 'none')
+                # 끌어서 이동: 보기는 옮겨지고 누름(시·도 선택·카드)은 생기지 않는다
+                before = svg.get_attribute('viewBox')
+                cx, cy = box['x'] + box['width'] * 0.6, box['y'] + box['height'] * 0.5
+                page.mouse.move(cx, cy); page.mouse.down(); page.mouse.move(cx + 120, cy + 40, steps=8); page.mouse.up()
+                self.assertNotEqual(svg.get_attribute('viewBox'), before)
+                expect(root).to_have_attribute('data-sido', '')
+                expect(page.locator('[data-rmap-card]')).to_be_hidden()
+                # 확대 중 면을 누르면 패널만 그 시·도로, 보기는 그대로, 카드가 열린다
+                sido = page.evaluate('() => document.elementFromPoint(%f, %f).dataset.sido' % (cx, cy))
+                self.assertTrue(sido)
+                before = svg.get_attribute('viewBox')
+                page.mouse.click(cx, cy)
+                expect(root).to_have_attribute('data-sido', sido)
+                self.assertEqual(svg.get_attribute('viewBox'), before)
+                expect(page.locator('[data-rmap-card]')).to_be_visible()
+                # 바다를 누르면 전국으로. 8배 넘게 확대해 내륙만 보이면 바다가 없으므로 1.6배로 다시 맞추고 시·도를 고른 뒤 누른다
+                page.locator('[data-rmap-zoom="전국 보기"]').click()
+                expect(root).to_have_attribute('data-zoom', 'done')
+                page.locator('[data-rmap-zoom="확대"]').click()
+                expect(root).to_have_attribute('data-zoomed', '1')
+                page.mouse.click(*page.evaluate(POINT_INSIDE, '.rmap-unit[data-code="44130"]'))
+                expect(root).to_have_attribute('data-sido', '44')
+                pt = page.evaluate(sea)
+                self.assertIsNotNone(pt)
+                page.mouse.click(*pt)
+                expect(root).to_have_attribute('data-sido', '')
+                expect(root).to_have_attribute('data-zoom', 'done')
+                expect(root).to_have_attribute('data-zoomed', '')
+                expect(page.locator('.rmap-badges')).to_be_visible()
+                expect(page.locator('.rmap-labels')).to_be_hidden()
+                # −/+·전국 버튼
+                page.locator('[data-rmap-zoom="확대"]').click()
+                expect(root).to_have_attribute('data-zoomed', '1')
+                page.locator('[data-rmap-zoom="전국 보기"]').click()
+                expect(root).to_have_attribute('data-zoom', 'done')
+                expect(root).to_have_attribute('data-zoomed', '')
+                page.locator('[data-rmap-zoom="축소"]').click()  # 전국보다 작게는 줄지 않는다
+                self.assertAlmostEqual(page.evaluate(vbw), w0, delta=1)
+                # 두 손가락 벌리기(터치 포인터 두 개)
+                page.evaluate('''() => { const s = document.querySelector('[data-rmap-canvas] svg'), r = s.getBoundingClientRect();
+                    const cx = r.x + r.width * 0.6, cy = r.y + r.height * 0.5, o = {bubbles: true, pointerType: 'touch'};
+                    s.dispatchEvent(new PointerEvent('pointerdown', {...o, pointerId: 11, clientX: cx - 20, clientY: cy}));
+                    s.dispatchEvent(new PointerEvent('pointerdown', {...o, pointerId: 12, clientX: cx + 20, clientY: cy}));
+                    for (let i = 1; i <= 10; i++) {
+                      window.dispatchEvent(new PointerEvent('pointermove', {...o, pointerId: 11, clientX: cx - 20 - i * 8, clientY: cy}));
+                      window.dispatchEvent(new PointerEvent('pointermove', {...o, pointerId: 12, clientX: cx + 20 + i * 8, clientY: cy})); }
+                    window.dispatchEvent(new PointerEvent('pointerup', {...o, pointerId: 11})); window.dispatchEvent(new PointerEvent('pointerup', {...o, pointerId: 12})); }''')
+                self.assertLess(page.evaluate(vbw), w0 / 3)
+                # 시·도를 고르면 그 시·도 이름만
+                page.locator('[data-rmap-zoom="전국 보기"]').click()
+                page.locator('.rmap-sido-row[data-sido="44"]').click()
+                expect(root).to_have_attribute('data-zoom', 'done')
+                names = page.eval_on_selector_all('.rmap-label', 'els => els.map(e => e.dataset.unit)')
+                self.assertTrue(names and all(n.startswith('44') for n in names), names)
+                page.close()
+                # 폰(18:13 형우): 자리가 되는 만큼 시군구 이름. 11px, 아래 시트·확대 버튼에 가리는 이름은 없다
+                page = browser.new_page(viewport={'width': 390, 'height': 844}, has_touch=True)
+                self.open_map(page)
+                page.locator('[data-rmap-sheet-toggle]').tap()
+                page.locator('.rmap-sido-row[data-sido="44"]').tap()
+                expect(page.locator('[data-rmap]')).to_have_attribute('data-zoom', 'done')
+                expect(page.locator('.rmap-label').first).to_be_visible()
+                expect(page.locator('.rmap-label').first).to_have_css('font-size', '11px')
+                hidden_by = page.evaluate('''() => { const covers = [...document.querySelectorAll('[data-rmap-panel], .rmap-zoom')].map(n => n.getBoundingClientRect());
+                    return [...document.querySelectorAll('.rmap-label')].filter(l => { const r = l.getBoundingClientRect();
+                      return covers.some(c => r.left < c.right && c.left < r.right && r.top < c.bottom && c.top < r.bottom); }).map(l => l.textContent); }''')
+                self.assertEqual(hidden_by, [])
+                page.close()
             finally:
                 browser.close()
 
@@ -291,9 +493,12 @@ class RegionMapBrowserScenarios(StaticLiveServerTestCase):
                     over = page.evaluate('document.scrollingElement.scrollHeight - innerHeight')
                     self.assertLessEqual(over, 1, f'{width}x{height} 세로 스크롤')
                     # 머리띠(제목·전환·범례)가 지도 위 여백 안에 들어온다(리뷰 4)
+                    # 11d부터 지도(svg)는 패널·띠 밑까지 깔리므로, 전국 지도 그림(면 묶음)이 띠·패널과 겹치지 않는지 본다
                     bar = page.locator('[data-rmap-bar]').bounding_box()
-                    svg = page.locator('[data-rmap-canvas] svg').bounding_box()
-                    self.assertLessEqual(bar['y'] + bar['height'], svg['y'] + 1)
+                    panel = page.locator('[data-rmap-panel]').bounding_box()
+                    drawn = page.evaluate('() => { const r = document.querySelector("[data-rmap-canvas] svg g").getBoundingClientRect(); return {x: r.x, y: r.y, w: r.width, h: r.height}; }')
+                    self.assertLessEqual(bar['y'] + bar['height'], drawn['y'] + 1)
+                    self.assertLessEqual(panel['x'] + panel['width'], drawn['x'] + 1)
                     page.close()
             finally:
                 browser.close()

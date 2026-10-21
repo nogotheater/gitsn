@@ -7,7 +7,8 @@
   var dataEl = document.getElementById('rmap-data');
   if (!root || !dataEl) return;
   var data = JSON.parse(dataEl.textContent);
-  var state = { family: data.families[0].key, target: data.targets[0].key, sido: null };
+  // tier: 전국 숫자에서 고른 보기 — all(전체) / wide(광역만) / basic(기초만)(형우 17:17)
+  var state = { family: data.families[0].key, target: data.targets[0].key, sido: null, tier: 'all' };
   var SVG = 'http://www.w3.org/2000/svg';
   var $ = function (sel) { return root.querySelector(sel); };
   var canvas = $('[data-rmap-canvas]'), errorBox = $('[data-rmap-error]'), stage = $('[data-rmap-stage]');
@@ -20,6 +21,14 @@
   var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var geo = null, svg = null, viewBox = null, sidoBox = {}, detailLoaded = {}, anim = null;
   var facLayer = null, centers = {}, cardOpener = null;
+  var badgeLayer = document.createElement('div');
+  badgeLayer.className = 'rmap-badges';
+  var labelLayer = document.createElement('div');  // 확대했을 때 시군구 이름(11d)
+  labelLayer.className = 'rmap-labels';
+  labelLayer.hidden = true;
+  var zoomBox = null, pointers = {}, dragMoved = false, suppressClick = false, viewTimer = null;
+  var MAX_ZOOM = 14;
+  var legendBadge = $('[data-rmap-legend-badge]');
 
   /* ---------- 도우미 ---------- */
   function el(tag, attrs, text) {
@@ -53,6 +62,16 @@
     if (count != null) h.appendChild(el('span', {}, count + '곳'));
     sec.appendChild(h);
     return sec;
+  }
+  /* 제품 마킹 배지(S, I, B, D, P, C). 제품명 대신 보인다(spec v4 6) */
+  function marks(org) {
+    var box = el('span', { 'class': 'rmap-marks', 'aria-label': '제품 ' + org.markers.join(', ') });
+    org.markers.forEach(function (m) {
+      var mk = el('span', { 'class': 'rmap-mark', 'aria-hidden': 'true' }, m);
+      mk.style.setProperty('--mark-color', (org.marker_colors || {})[m] || '#6B7580');  // 제품 관리 색
+      box.appendChild(mk);
+    });
+    return box;
   }
   function facDot() { return el('span', { 'class': 'rmap-fac-dot', 'aria-hidden': 'true', 'data-fac': '' }); }
   function whenVisible(fn) {
@@ -104,12 +123,15 @@
         b.setAttribute('aria-pressed', String(state[key] === b.dataset.value));
       });
     });
+    if (legendBadge) legendBadge.lastChild.textContent = state.target === 'council' ? '의회' : '광역';
+    root.dataset.tier = state.tier;
   }
 
   /* ---------- 패널 ---------- */
-  function renderSummary(adopted, total) {
+  /* 요약 숫자. parts가 있으면 아래에 광역·기초 두 줄을 나눠 보인다(spec v4 7) */
+  function renderSummary(title, adopted, total, parts) {
     summary.textContent = '';
-    summary.appendChild(el('p', { 'class': 'rmap-summary-label' }, label(data.families, state.family) + ' 도입 ' + noun()));
+    summary.appendChild(el('p', { 'class': 'rmap-summary-label' }, title));
     var v = el('p', { 'class': 'rmap-summary-value', 'data-rmap-national': '' });
     v.appendChild(el('strong', {}, String(adopted)));
     v.appendChild(el('span', {}, '/ ' + total));
@@ -117,13 +139,41 @@
     var m = meter(adopted, total);
     m.classList.add('rmap-summary-bar');
     summary.appendChild(m);
+    if (!parts) return;
+    // 광역·기초 칸은 보기 버튼이다. 누르면 그것만 지도·목록에 보이고, 다시 누르면 전체로 돌아간다
+    var dl = el('div', { 'class': 'rmap-summary-parts', role: 'group', 'aria-label': '광역·기초 나눠 보기' });
+    parts.forEach(function (pt) {
+      // 광역 = 켜고 끄는 보기 버튼. 기초 = 원래 보기로 돌아가는 버튼(눌린 상태 없음, 17:34 형우)
+      var row = el('button', { type: 'button', 'data-rmap-part': pt.key });
+      if (pt.key === 'wide') row.setAttribute('aria-pressed', String(state.tier === 'wide'));
+      row.appendChild(el('span', { 'class': 'rmap-part-label' }, pt.label));
+      var dd = el('span', { 'class': 'rmap-part-value', 'data-part-value': '' });
+      dd.appendChild(el('b', {}, String(pt.adopted)));
+      dd.appendChild(document.createTextNode(' / ' + pt.total));
+      row.appendChild(dd);
+      row.addEventListener('click', function () {
+        state.tier = pt.key === 'wide' && state.tier !== 'wide' ? 'wide' : 'all';
+        update();
+        var again = summary.querySelector('[data-rmap-part="' + pt.key + '"]');
+        if (again) again.focus({ preventScroll: true });
+      });
+      dl.appendChild(row);
+    });
+    summary.appendChild(dl);
   }
 
   function renderNational() {
     var c = combo();
     head.textContent = '';
-    renderSummary(c.national.adopted, c.national.total);
+    var n = c.national, council = state.target === 'council', tier = state.tier;
+    var top = tier === 'wide' ? n.wide : n;
+    var tierWord = tier === 'wide' ? (council ? ' · 광역의회' : ' · 광역') : '';
+    renderSummary(label(data.families, state.family) + ' 도입 ' + noun() + tierWord, top.adopted, top.total, [
+      { key: 'wide', label: council ? '광역의회' : '광역', adopted: n.wide.adopted, total: n.wide.total },
+      { key: 'basic', label: council ? '기초의회' : '기초', adopted: n.basic.adopted, total: n.basic.total }
+    ]);
     body.textContent = '';
+    if (tier === 'wide') { renderWideList(c); return; }
     var list = el('ol', { 'class': 'rmap-sido-list', 'aria-label': '시·도별 도입 현황' });
     c.sido.forEach(function (s) {
       var li = el('li');
@@ -162,10 +212,51 @@
     row.appendChild(symbol(org));
     var t = el('span', { 'class': 'rmap-org-text' });
     t.appendChild(el('span', { 'class': 'rmap-org-name' }, org.name));
-    t.appendChild(el('span', { 'class': 'rmap-org-meta' }, org.products + ' · ' + org.year));
+    var meta = el('span', { 'class': 'rmap-org-meta' });
+    meta.appendChild(marks(org));
+    meta.appendChild(el('span', { 'class': 'rmap-org-year' }, org.year));
+    t.appendChild(meta);
     row.appendChild(t);
     li.appendChild(row);
     return li;
+  }
+
+  /* 광역 보기의 왼쪽 목록: 막대 대신 광역 기관 카드(심볼·이름·마킹·도입 연도). 빈 칸은 '미도입' 카드. 누르면 그 시·도로 */
+  function renderWideList(c) {
+    var list = el('ul', { 'class': 'rmap-wide-list', 'data-rmap-wide-list': '', 'aria-label': '광역 기관 도입 현황' });
+    c.sido.forEach(function (s) {
+      // 세종·제주는 그 한 면의 기관이 곧 광역 기관이다
+      var orgs = s.whole ? ((c.units[s.adopted_units.concat(s.missing)[0]] || {}).orgs || []) : s.wide_orgs;
+      var cards = orgs.slice(0, s.wide_slots).map(function (o) { return [o, true]; });
+      while (cards.length < s.wide_slots) cards.push([{ name: wideName(s.code) }, false]);
+      cards.forEach(function (pair) {
+        var li = el('li');
+        var b = wideCard(pair[0], pair[1], 'button');
+        b.setAttribute('data-sido', s.code);
+        b.addEventListener('click', function () { selectSido(s.code, true); });
+        li.appendChild(b);
+        list.appendChild(li);
+      });
+    });
+    body.appendChild(list);
+  }
+
+  function wideCard(org, isIn, tag) {
+    var box = el(tag || 'div', { 'class': 'rmap-wide-card' + (isIn ? ' is-in' : ''), 'data-rmap-wide-card': isIn ? 'in' : 'out' });
+    if (tag === 'button') box.setAttribute('type', 'button');
+    if (org.id) box.setAttribute('data-org', org.id);
+    box.appendChild(isIn ? symbol(org) : el('span', { 'class': 'rmap-symbol is-empty', 'aria-hidden': 'true' }, org.name.slice(0, 1)));
+    var t = el('span', { 'class': 'rmap-wide-text' });
+    t.appendChild(el('span', { 'class': 'rmap-org-name' }, org.name));
+    if (isIn) {
+      var meta = el('span', { 'class': 'rmap-org-meta' });
+      meta.appendChild(marks(org));
+      meta.appendChild(el('span', { 'class': 'rmap-org-year' }, org.year));
+      t.appendChild(meta);
+    }
+    box.appendChild(t);
+    box.appendChild(el('span', { 'class': 'rmap-status' + (isIn ? ' is-in' : ''), 'data-field': 'status' }, isIn ? '도입' : '미도입'));
+    return box;
   }
 
   function renderSido() {
@@ -176,16 +267,18 @@
     back.addEventListener('click', function () { selectSido(null, true, state.sido); });
     head.appendChild(back);
     head.appendChild(el('h2', { 'class': 'rmap-panel-title', 'data-rmap-sido-title': '' }, s.name));
-    renderSummary(s.adopted, s.total);
+    // 시·도 화면은 기초 기준. 세종·제주는 그 한 면이 곧 광역이다
+    var tier = s.whole ? (state.target === 'council' ? '광역의회' : '광역') : (state.target === 'council' ? '기초의회' : '기초 ' + noun());
+    renderSummary(label(data.families, state.family) + ' 도입 · ' + tier, s.adopted, s.total);
     body.textContent = '';
 
     if (!s.whole) {  // 세종·제주는 광역 기관이 곧 그 면이라 '도입한 곳'에만 둔다(리뷰 24)
       var wide = section(state.target === 'council' ? '광역의회' : '광역 기관');
       var w = el('div', { 'class': 'rmap-wide', 'data-rmap-wide': '' });
-      if (s.wide_orgs.length) {
-        s.wide_orgs.forEach(function (o) { w.appendChild(el('span', { 'data-org': o.id }, o.name + ' · 도입')); });
-      } else {
-        w.appendChild(el('span', { 'class': 'is-none' }, '미도입'));
+      // 광역 상태 카드(spec v4 1-D): 도입한 광역 기관마다 한 장, 빈 칸(전남광주 2칸 중 1칸 등)은 '미도입' 카드
+      s.wide_orgs.slice(0, s.wide_slots).forEach(function (o) { w.appendChild(wideCard(o, true)); });
+      for (var i = Math.min(s.wide_orgs.length, s.wide_slots); i < s.wide_slots; i++) {
+        w.appendChild(wideCard({ name: s.name + (state.target === 'council' ? '의회' : '') }, false));
       }
       s.wide_facilities.forEach(function (o) {
         var b = el('button', { type: 'button', 'class': 'rmap-chip', 'data-org': o.id, 'data-fac': '' });
@@ -236,13 +329,82 @@
     var c = combo();
     svg.querySelectorAll('.rmap-unit').forEach(function (p) {
       var slot = c.units[p.dataset.code];
-      p.classList.toggle('is-in', !!(slot && slot.state === 'in'));
+      // 광역 보기(17:34): 시·도 전체 면을 광역 도입으로 칠한다. 전남광주처럼 2칸 중 1칸이면 흐리게(is-part)
+      if (state.tier === 'wide') {
+        var w = sidoRow(p.dataset.sido);
+        p.classList.toggle('is-in', w.wide_count >= w.wide_slots);
+        p.classList.toggle('is-part', w.wide_count > 0 && w.wide_count < w.wide_slots);
+      } else {
+        p.classList.toggle('is-in', !!(slot && slot.state === 'in'));
+        p.classList.remove('is-part');
+      }
       p.classList.toggle('is-dim', !!state.sido && p.dataset.sido !== state.sido);
     });
     svg.querySelectorAll('.rmap-sido').forEach(function (p) {
       p.classList.toggle('is-selected', p.dataset.code === state.sido);
     });
     drawMarkers();
+    drawBadges();
+    if (root.dataset.zoom !== 'moving') drawLabels();
+  }
+
+  /* 광역 기관 짧은 이름: 서울특별시 → 서울시, 충청남도 → 충남도, 강원특별자치도 → 강원도, 전남광주통합특별시 → 전남광주. 의회는 + 의회 */
+  function wideName(code) {
+    var info = sidoInfo(code), name = info.name, short = info.short;
+    var base = code === '12' ? short : /도$/.test(name) ? short + '도' : short + '시';
+    return base + (state.target === 'council' ? '의회' : '');
+  }
+  /* 광역 배지(spec v4 1-A, 17:17 수정): 유리 알약 + 광역(의회) 기관 이름. 점 채움 = 도입. 세종·제주도 표시.
+     전국 크기에서만 보이고, 시·도를 고르거나 확대하면 사라진다(그때는 광역 상태 카드로 본다).
+     글자 크기가 확대와 무관하게 같도록 SVG 밖 HTML 층에 두고, 화면 좌표로 옮긴다 */
+  function drawBadges() {
+    var c = combo();
+    badgeLayer.textContent = '';
+    c.sido.forEach(function (s) {
+      var info = sidoInfo(s.code);
+      if (!info.label) return;
+      var full = s.wide_count >= s.wide_slots, part = s.wide_count > 0 && !full;
+      // 누름은 받지 않는다(보류, 17:17). 밑의 면을 누르면 그 시·도로 간다. 같은 내용은 목록·광역 상태 카드에 있다
+      var b = el('span', { 'aria-hidden': 'true', 'class': 'rmap-badge' + (full ? ' is-in' : part ? ' is-part' : ''),
+                           'data-sido': s.code, 'data-state': full ? 'in' : part ? 'part' : 'out' });
+      b.appendChild(el('i', { 'class': 'rmap-badge-dot' }));
+      b.appendChild(document.createTextNode(wideName(s.code) + (s.wide_slots > 1 ? ' ' + s.wide_count + '/' + s.wide_slots : '')));
+      badgeLayer.appendChild(b);
+    });
+    badgeLayer.hidden = !!state.sido || zoomedIn();
+    placeBadges();
+  }
+  /* 전국 보기보다 1.3배 넘게 확대했는지(자유 확대 대비) */
+  function zoomedIn() { return !!(geo && viewBox && svg) && viewBox[2] < nationalBox()[2] / 1.3; }
+  function placeBadges() {
+    if (!svg || !badgeLayer.firstChild) return;
+    badgeLayer.hidden = !!state.sido || zoomedIn();
+    if (badgeLayer.hidden) return;
+    var m = svg.getScreenCTM(), cr = canvas.getBoundingClientRect(), pt = svg.createSVGPoint();
+    if (!m) return;
+    var items = [];
+    badgeLayer.querySelectorAll('.rmap-badge').forEach(function (b) {
+      var l = sidoInfo(b.dataset.sido).label;
+      pt.x = l[0]; pt.y = l[1];
+      var q = pt.matrixTransform(m);
+      items.push({ el: b, x: q.x - cr.left, y: q.y - cr.top, w: b.offsetWidth, h: b.offsetHeight });
+    });
+    // 화면 크기에 따라 배지끼리 겹치면(서울·인천, 세종·충남 등) 위아래로 조금씩 밀어 떼어 놓는다
+    for (var round = 0; round < 12; round++) {
+      var moved = false;
+      for (var i = 0; i < items.length; i++) {
+        for (var j = i + 1; j < items.length; j++) {
+          var A = items[i], B = items[j], gap = 3;
+          if (Math.abs(A.x - B.x) >= (A.w + B.w) / 2 + gap) continue;
+          var need = (A.h + B.h) / 2 + gap - Math.abs(A.y - B.y);
+          if (need <= 0) continue;
+          var up = A.y <= B.y ? A : B, down = up === A ? B : A;
+          up.y -= need / 2; down.y += need / 2; moved = true;
+        }
+      }
+      if (!moved) break;
+    }
+    items.forEach(function (it) { it.el.style.left = it.x + 'px'; it.el.style.top = it.y + 'px'; });
   }
 
   function update() {
@@ -252,6 +414,7 @@
     if (state.sido) { renderSido(); } else { renderNational(); }
     paint();
     root.dataset.combo = state.family + ':' + state.target;
+    root.dataset.family = state.family;  // 제품군 색(도청 파랑 / 불법촬영 코랄)은 CSS가 이 값으로 바꾼다
     root.dataset.sido = state.sido || '';
     layout();
   }
@@ -268,7 +431,8 @@
   function markerRadius() {
     var w = svg.clientWidth || 1, h = svg.clientHeight || 1;
     var perPx = Math.max(viewBox[2] / w, viewBox[3] / h);
-    return Math.max(Math.max(viewBox[2], viewBox[3]) / 150, 7 * perPx);
+    // 화면에서 늘 반지름 7px(18:03 형우: 11d에서 지도를 화면 전체로 넓히며 viewBox 기준 크기가 커지던 것을 고침)
+    return 7 * perPx;
   }
   function drawMarkers() {
     var c = combo();
@@ -303,7 +467,10 @@
     if (onMarker && slot && slot.facilities.length) {  // 시설 표시 위: 시설·공기업 목록(리뷰 11)
       tip.appendChild(el('strong', {}, data.units[code].name + ' 시설·공기업'));
       slot.facilities.forEach(function (o) {
-        tip.appendChild(el('span', { 'class': 'rmap-tip-line' }, o.name + ' · ' + o.products + ' · ' + o.year));
+        var line = el('span', { 'class': 'rmap-tip-line' }, o.name + ' ');
+        line.appendChild(marks(o));
+        line.appendChild(document.createTextNode(' ' + o.year));
+        tip.appendChild(line);
       });
     } else {
       tip.appendChild(el('strong', {}, unitLabel(code)));
@@ -325,7 +492,8 @@
     t.appendChild(el('p', { 'class': 'rmap-card-family', 'data-field': 'family' }, label(data.families, state.family)));
     box.appendChild(t);
     var cells = el('dl', { 'class': 'rmap-card-cells' });
-    var a = el('div'); a.appendChild(el('dt', {}, '제품')); a.appendChild(el('dd', { 'data-field': 'products' }, org.products));
+    var a = el('div'); a.appendChild(el('dt', {}, '제품'));
+    var dd = el('dd', { 'data-field': 'marks' }); dd.appendChild(marks(org)); a.appendChild(dd);
     var b = el('div'); b.appendChild(el('dt', {}, '도입 연도')); b.appendChild(el('dd', { 'data-field': 'year' }, org.year));
     cells.appendChild(a); cells.appendChild(b);
     box.appendChild(cells);
@@ -367,10 +535,10 @@
     card.dataset.unit = code;
     showCard(close, x, y);
   }
-  /* 목록에서 연 카드는 패널 왼쪽, 누른 줄 높이에 띄운다 */
+  /* 목록에서 연 카드는 패널 오른쪽(패널이 왼쪽에 있다), 누른 줄 높이에 띄운다. place()가 14px를 더한다 */
   function besidePanel(opener) {
     var r = panel.getBoundingClientRect(), b = opener.getBoundingClientRect();
-    return [r.left - 296 - 40, b.top];
+    return [r.right + 2, b.top];
   }
   function openOrgsCard(opener, title, orgs) {
     var close = cardShell(), at = besidePanel(opener);
@@ -401,23 +569,39 @@
       var r = markerRadius();
       facLayer.querySelectorAll('circle').forEach(function (m) { m.setAttribute('r', r); });
     }
+    placeBadges();
+    var z = zoomedIn();
+    root.dataset.zoomed = z ? '1' : '';
+    // 전국 크기에서는 한 손가락으로 페이지가 스크롤되게(pan-y), 확대했으면 지도가 손가락을 받는다
+    svg.style.touchAction = z ? 'none' : 'pan-y';
   }
+  /* 지도는 화면 전체(패널·상단 띠 밑까지)에 그리고, 보여줄 범위 b는 패널·띠를 뺀 빈 곳(캔버스 안쪽 여백 안)에 맞춘다.
+     그래서 확대·이동하면 지도가 유리 패널 밑으로 지나간다 */
+  function fitBox(b) {
+    var W = svg.clientWidth || 1, H = svg.clientHeight || 1, cs = getComputedStyle(canvas);
+    var pl = parseFloat(cs.paddingLeft) || 0, pr = parseFloat(cs.paddingRight) || 0;
+    var pt = parseFloat(cs.paddingTop) || 0, pb = parseFloat(cs.paddingBottom) || 0;
+    var fw = Math.max(80, W - pl - pr), fh = Math.max(80, H - pt - pb), k = Math.min(fw / b[2], fh / b[3]);
+    return [b[0] + b[2] / 2 - (pl + fw / 2) / k, b[1] + b[3] / 2 - (pt + fh / 2) / k, W / k, H / k];
+  }
+  function nationalBox() { return fitBox(geo.viewBox); }
   function targetBox(code) {
-    if (!code) return geo.viewBox.slice();
+    if (!code) return nationalBox();
     var b = sidoBox[code], w = b[2] - b[0], h = b[3] - b[1], pad = Math.max(w, h) * 0.08 + 6;
-    return [b[0] - pad, b[1] - pad, w + pad * 2, h + pad * 2];
+    return fitBox([b[0] - pad, b[1] - pad, w + pad * 2, h + pad * 2]);
   }
   function zoomTo(vb) {
     if (anim) cancelAnimationFrame(anim);
     // 움직임 줄이기 설정이거나 화면이 보이지 않을 때(애니메이션 프레임이 멈춤)는 바로 이동한다
-    if (reduceMotion || document.visibilityState !== 'visible') { setViewBox(vb); root.dataset.zoom = 'done'; return; }
+    if (reduceMotion || document.visibilityState !== 'visible') { setViewBox(vb); root.dataset.zoom = 'done'; afterView(true); return; }
     root.dataset.zoom = 'moving';  // 검사와 확대 중 판단에 쓴다
+    labelLayer.hidden = true;
     var from = viewBox.slice(), start = null, dur = 420;
     function step(t) {
       if (start === null) start = t;
       var k = Math.min(1, (t - start) / dur), e = 1 - Math.pow(1 - k, 3);
       setViewBox(from.map(function (f, i) { return f + (vb[i] - f) * e; }));
-      if (k < 1) { anim = requestAnimationFrame(step); } else { anim = null; root.dataset.zoom = 'done'; }
+      if (k < 1) { anim = requestAnimationFrame(step); } else { anim = null; root.dataset.zoom = 'done'; afterView(true); }
     }
     anim = requestAnimationFrame(step);
   }
@@ -439,15 +623,154 @@
       })
       .catch(function () { detailLoaded[code] = false; /* 전국용 경계로 계속 보여준다 */ });
   }
-  function selectSido(code, moveFocus, fromSido) {
+  /* keepView: 자유 확대 중에 면을 누르면 패널만 그 시·도로 바꾸고 보기는 그대로 둔다(확대는 보기만, 패널은 누른 것만) */
+  function selectSido(code, moveFocus, fromSido, keepView) {
     state.sido = code;
+    if (code) state.tier = 'all';  // 시·도 화면은 기초 기준이라 광역 보기를 끈다
     if (narrow.matches) setSheet(false);  // 확대한 지도가 시트에 가리지 않게(리뷰 2)
     update();
-    if (svg) { zoomTo(targetBox(code)); if (code) loadDetail(code); }
+    if (svg) {
+      if (!keepView) zoomTo(targetBox(code)); else afterView(true);
+      if (code) loadDetail(code);
+    }
     if (moveFocus) {  // 키보드로 오갈 때 포커스를 잃지 않게(리뷰 18)
       var target = code ? $('[data-rmap-back]') : (fromSido ? $('.rmap-sido-row[data-sido="' + fromSido + '"]') : null);
       if (target) target.focus({ preventScroll: true });
     }
+  }
+
+  /* ---------- 자유 확대(11d): 휠·끌기·두 손가락·−/+·전국 ---------- */
+  function toSvgPoint(x, y) {
+    var pt = svg.createSVGPoint(); pt.x = x; pt.y = y;
+    return pt.matrixTransform(svg.getScreenCTM().inverse());
+  }
+  /* 전국보다 넓게는 못 줄이고, 14배보다 크게는 못 키운다. 가운데는 전국 범위 안에 둔다 */
+  function clampBox(vb) {
+    var N = nationalBox(), g = geo.viewBox, k = vb[2] / N[2], w = vb[2], h = vb[3];
+    if (k >= 0.999) return N;  // 전국 크기보다 줄이면 늘 전국 보기로
+    if (k < 1 / MAX_ZOOM) { w *= 1 / (MAX_ZOOM * k); h *= 1 / (MAX_ZOOM * k); }
+    var cx = Math.min(g[0] + g[2], Math.max(g[0], vb[0] + vb[2] / 2));
+    var cy = Math.min(g[1] + g[3], Math.max(g[1], vb[1] + vb[3] / 2));
+    return [cx - w / 2, cy - h / 2, w, h];
+  }
+  function zoomAt(factor, x, y) {
+    if (!svg) return;
+    if (anim) { cancelAnimationFrame(anim); anim = null; root.dataset.zoom = 'done'; }
+    var p = toSvgPoint(x, y), vb = viewBox;
+    setViewBox(clampBox([p.x - (p.x - vb[0]) / factor, p.y - (p.y - vb[1]) / factor, vb[2] / factor, vb[3] / factor]));
+    viewChanged();
+  }
+  function panBy(dx, dy) {
+    var m = svg.getScreenCTM(), vb = viewBox;
+    setViewBox(clampBox([vb[0] - dx / m.a, vb[1] - dy / m.d, vb[2], vb[3]]));
+    viewChanged();
+  }
+  /* 보기가 바뀌는 동안은 이름을 숨기고, 멈추면 다시 그린다 */
+  function viewChanged() {
+    closeCard(false); hideTip();
+    labelLayer.hidden = true;
+    clearTimeout(viewTimer);
+    viewTimer = setTimeout(function () { afterView(true); }, 160);
+  }
+  function afterView(now) {
+    if (!svg) return;
+    if (!now) { clearTimeout(viewTimer); viewTimer = setTimeout(function () { afterView(true); }, 160); return; }
+    // 많이 확대한 곳의 시·도는 세밀한 경계로 바꾼다
+    if (viewBox[2] < nationalBox()[2] / 2) {
+      Object.keys(sidoBox).forEach(function (code) {
+        var b = sidoBox[code];
+        if (b[2] > viewBox[0] && b[0] < viewBox[0] + viewBox[2] && b[3] > viewBox[1] && b[1] < viewBox[1] + viewBox[3]) loadDetail(code);
+      });
+    }
+    drawLabels();
+  }
+  function bindZoom() {
+    canvas.addEventListener('wheel', function (ev) {
+      if (!svg) return;
+      ev.preventDefault();
+      var unit = ev.deltaMode === 1 ? 0.05 : 0.0018;
+      zoomAt(Math.exp(-ev.deltaY * unit), ev.clientX, ev.clientY);
+    }, { passive: false });
+    svg.addEventListener('pointerdown', function (ev) {
+      if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+      pointers[ev.pointerId] = { x: ev.clientX, y: ev.clientY, sx: ev.clientX, sy: ev.clientY, type: ev.pointerType };
+      if (Object.keys(pointers).length === 1) dragMoved = false;
+    });
+    window.addEventListener('pointermove', function (ev) {
+      var me = pointers[ev.pointerId];
+      if (!me) return;
+      var ids = Object.keys(pointers);
+      if (ids.length >= 2) {  // 두 손가락: 벌리면 확대, 같이 움직이면 이동
+        var a = pointers[ids[0]], b = pointers[ids[1]];
+        var d0 = Math.hypot(a.x - b.x, a.y - b.y), mx0 = (a.x + b.x) / 2, my0 = (a.y + b.y) / 2;
+        me.x = ev.clientX; me.y = ev.clientY;
+        var d1 = Math.hypot(a.x - b.x, a.y - b.y), mx1 = (a.x + b.x) / 2, my1 = (a.y + b.y) / 2;
+        dragMoved = true;
+        if (d0 > 0) zoomAt(d1 / d0, mx1, my1);
+        if (zoomedIn()) panBy(mx1 - mx0, my1 - my0);
+        return;
+      }
+      var dx = ev.clientX - me.x, dy = ev.clientY - me.y;
+      me.x = ev.clientX; me.y = ev.clientY;
+      if (!dragMoved && Math.hypot(ev.clientX - me.sx, ev.clientY - me.sy) < 5) return;
+      if (!zoomedIn()) return;  // 전국 크기에서는 끌어도 움직이지 않는다(터치는 페이지 스크롤)
+      dragMoved = true;
+      root.dataset.dragging = '1';
+      panBy(dx, dy);
+    });
+    function release(ev) {
+      if (!pointers[ev.pointerId]) return;
+      delete pointers[ev.pointerId];
+      if (!Object.keys(pointers).length) {
+        root.dataset.dragging = '';
+        if (dragMoved) { suppressClick = true; setTimeout(function () { suppressClick = false; }, 0); }
+      }
+    }
+    window.addEventListener('pointerup', release);
+    window.addEventListener('pointercancel', release);
+  }
+  function zoomControls() {
+    zoomBox = el('div', { 'class': 'rmap-zoom', role: 'group', 'aria-label': '지도 확대' });
+    [['+', '확대', function () { var r = svg.getBoundingClientRect(); zoomAt(1.6, r.left + r.width / 2, r.top + r.height / 2); }],
+     ['−', '축소', function () { var r = svg.getBoundingClientRect(); zoomAt(1 / 1.6, r.left + r.width / 2, r.top + r.height / 2); }],
+     ['전국', '전국 보기', function () { if (state.sido) { selectSido(null, false, state.sido); } else { zoomTo(nationalBox()); } }]
+    ].forEach(function (b) {
+      var btn = el('button', { type: 'button', 'aria-label': b[1], 'data-rmap-zoom': b[1] }, b[0]);
+      btn.addEventListener('click', b[2]);
+      zoomBox.appendChild(btn);
+    });
+    return zoomBox;
+  }
+
+  /* 시군구 이름(17:49 데스크톱, 18:13 모바일도): 시·도를 고르거나 확대했을 때만. 화면에서 면이 이름보다 작으면 숨기고 서로 겹치지 않게 한다.
+     패널(아래 시트)·상단 띠·확대 버튼에 가리는 자리는 처음부터 비워 둔다. 글씨 크기는 CSS(폰 11px) */
+  function drawLabels() {
+    labelLayer.textContent = '';
+    var show = svg && (state.sido || zoomedIn()) && root.dataset.zoom !== 'moving';
+    labelLayer.hidden = !show;
+    if (!show) return;
+    var m = svg.getScreenCTM(), cr = canvas.getBoundingClientRect(), pt = svg.createSVGPoint(), vb = viewBox;
+    var placed = [panel, bar, zoomBox].filter(Boolean).map(function (n) {
+      var r = n.getBoundingClientRect();
+      return { l: r.left - cr.left, r: r.right - cr.left, t: r.top - cr.top, b: r.bottom - cr.top };
+    });
+    Object.keys(data.units).forEach(function (code) {
+      var u = data.units[code];
+      if (!u.lp || (state.sido && u.sido !== state.sido)) return;
+      if (u.lp[0] < vb[0] || u.lp[0] > vb[0] + vb[2] || u.lp[1] < vb[1] || u.lp[1] > vb[1] + vb[3]) return;
+      var r = svg.querySelector('.rmap-unit[data-code="' + code + '"]').getBoundingClientRect();
+      var span = el('span', { 'class': 'rmap-label', 'data-unit': code }, u.name);
+      labelLayer.appendChild(span);
+      var w = span.offsetWidth, h = span.offsetHeight;
+      pt.x = u.lp[0]; pt.y = u.lp[1];
+      var q = pt.matrixTransform(m), x = q.x - cr.left, y = q.y - cr.top;
+      var box = { l: x - w / 2 - 2, r: x + w / 2 + 2, t: y - h / 2 - 1, b: y + h / 2 + 1 };
+      var fits = r.width >= w * 1.05 && r.height >= h * 1.4 && box.l > 0 && box.t > 0 && box.r < cr.width && box.b < cr.height &&
+        !placed.some(function (o) { return box.l < o.r && o.l < box.r && box.t < o.b && o.t < box.b; });
+      if (!fits) { labelLayer.removeChild(span); return; }
+      span.style.left = x + 'px'; span.style.top = y + 'px';
+      placed.push(box);
+    });
   }
 
   function draw(g) {
@@ -482,13 +805,23 @@
       return n ? { code: n.dataset.code, marker: n.classList.contains('rmap-fac') } : null;
     }
     svg.addEventListener('click', function (ev) {
+      if (suppressClick) { suppressClick = false; return; }  // 끌어서 옮긴 뒤 손을 뗀 것은 누름이 아니다
       var h = hit(ev.target);
-      if (!h) { closeCard(false); return; }
+      if (!h) {  // 바다를 누르면 전국으로(17:00 형우)
+        closeCard(false);
+        if (state.sido) { selectSido(null, false, state.sido); } else if (zoomedIn()) { zoomTo(nationalBox()); }
+        return;
+      }
       var sidoCode = data.units[h.code].sido;
-      if (state.sido !== sidoCode) { selectSido(sidoCode); return; }
+      if (state.sido !== sidoCode) {
+        if (zoomedIn() && !state.sido) { selectSido(sidoCode, false, null, true); openCard(h.code, ev.clientX, ev.clientY); cardOpener = null; }
+        else { selectSido(sidoCode); }
+        return;
+      }
       openCard(h.code, ev.clientX, ev.clientY);
       cardOpener = null;
     });
+    bindZoom();
     svg.addEventListener('pointermove', function (ev) {
       if (ev.pointerType !== 'mouse') return;
       var h = hit(ev.target);
@@ -497,6 +830,9 @@
     });
     svg.addEventListener('pointerleave', hideTip);
     canvas.appendChild(svg);
+    canvas.appendChild(badgeLayer);
+    canvas.appendChild(labelLayer);
+    canvas.appendChild(zoomControls());
     setViewBox(targetBox(state.sido));
     paint();
     layout();
@@ -506,13 +842,16 @@
   document.addEventListener('keydown', function (ev) {
     if (ev.key !== 'Escape') return;
     if (!card.hidden) { closeCard(true); return; }   // 카드가 열려 있으면 카드만 닫는다
-    if (state.sido) selectSido(null, true, state.sido);
+    if (state.sido) { selectSido(null, true, state.sido); } else if (zoomedIn()) { zoomTo(nationalBox()); }
   });
   document.addEventListener('pointerdown', function (ev) {
     if (card.hidden || card.contains(ev.target) || (svg && svg.contains(ev.target)) || panel.contains(ev.target)) return;
     closeCard(false);
   });
-  window.addEventListener('resize', function () { layout(); if (svg) setViewBox(viewBox); });
+  window.addEventListener('resize', function () {
+    layout();
+    if (svg) { setViewBox(zoomedIn() && !state.sido ? viewBox : targetBox(state.sido)); afterView(); }
+  });
   if (narrow.addEventListener) narrow.addEventListener('change', function () { setSheet(false); update(); });
 
   setSheet(false);

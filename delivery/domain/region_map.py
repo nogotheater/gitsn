@@ -5,6 +5,8 @@
 - 불법촬영 보안: Alpha-C(C)
 - 묶음 밖 제품(Alpha-H 등)만 있는 기관은 두 제품군 모두 미도입이다.
 """
+import re
+
 from . import admin_areas as aa
 
 EAVESDROP = 'eavesdrop'
@@ -49,11 +51,22 @@ def _family_summary(record, family):
     products = sorted({(order.get(c['marker'], 99), c['product']) for c in lines})
     name = record['name']
     return {'id': record['id'], 'name': name, 'initial': name[:1], 'logo': record.get('logo') or '',
-            'products': ', '.join(p for _o, p in products), 'year': year}
+            'products': ', '.join(p for _o, p in products), 'year': year,
+            # 화면에는 제품명 대신 마킹 글자를 보인다(spec v4 6). 순서: I S B D P C
+            'markers': sorted({c['marker'] for c in lines}, key=lambda m: order.get(m, 99)),
+            # 마킹 색은 제품 관리의 '제품 표시 색상'을 그대로 쓴다(형우 16:40). 형식이 틀리면 시스템 기본 회색
+            'marker_colors': {c['marker']: _badge_color(c.get('color')) for c in lines}}
 
 
-def compute_map(records, family):
-    """한 조합(제품군 × 대상)의 지도 데이터. records는 이미 대상(지자체/의회)으로 거른 목록이다."""
+def _badge_color(value):
+    """templatetags.delivery_display.badge_color와 같은 규칙."""
+    return value if isinstance(value, str) and re.fullmatch(r'#[0-9a-fA-F]{6}', value) else '#6B7580'
+
+
+def compute_map(records, family, wide_slots=None):
+    """한 조합(제품군 × 대상)의 지도 데이터. records는 이미 대상(지자체/의회)으로 거른 목록이다.
+    wide_slots: 광역을 여러 칸으로 세는 시·도 {코드: 칸 수}. 예: 전남광주 지자체는 광주청사·무안청사 2칸(형우 16:10)."""
+    wide_slots = wide_slots or {}
     units = {code: {'state': 'out', 'orgs': [], 'facilities': []} for code, *_ in aa.UNITS}
     wide = {code: {'orgs': [], 'facilities': []} for code, *_ in aa.SIDO}
     unassigned = []
@@ -82,9 +95,16 @@ def compute_map(records, family):
         adopted = [c for c in codes if units[c]['state'] == 'in']
         # 세종·제주: 광역 기관이 곧 그 한 면이다. 도입한 곳 목록에만 두고 광역 줄에는 다시 넣지 않는다(리뷰 24)
         wide_orgs = list(wide[code]['orgs'])
+        # 광역 도입: 세종·제주는 그 한 면의 도입, 나머지는 시·도 코드로 등록된 행정기관(spec v4 7)
+        wide_in = (units[codes[0]]['state'] == 'in') if whole else bool(wide_orgs)
+        slots = 1 if whole else wide_slots.get(code, 1)
+        wide_count = int(wide_in) if whole else min(len(wide_orgs), slots)
         sido_rows.append({
             'code': code, 'name': name, 'short': short, 'whole': whole,
             'adopted': len(adopted), 'total': len(codes),
+            # 기초 숫자: 세종·제주는 기초 자치단체가 없어 0 / 0
+            'basic_adopted': 0 if whole else len(adopted), 'basic_total': 0 if whole else len(codes),
+            'wide_adopted': wide_in, 'wide_count': wide_count, 'wide_slots': slots,
             'wide_orgs': sorted(wide_orgs, key=lambda o: o['name']),
             'wide_facilities': sorted(wide[code]['facilities'], key=lambda o: o['name']),
             'missing': [c for c in codes if units[c]['state'] == 'out'],
@@ -93,9 +113,12 @@ def compute_map(records, family):
     for slot in units.values():
         slot['orgs'].sort(key=lambda o: o['name'])
         slot['facilities'].sort(key=lambda o: o['name'])
-    total_in = sum(s['adopted'] for s in sido_rows)
+    # 전국 = 광역(시·도 16) + 기초(227). 세종·제주는 광역에만 센다(spec v4 7, 2026-10-21 형우)
+    wide_n = {'adopted': sum(s['wide_count'] for s in sido_rows), 'total': sum(s['wide_slots'] for s in sido_rows)}
+    basic_n = {'adopted': sum(s['basic_adopted'] for s in sido_rows), 'total': sum(s['basic_total'] for s in sido_rows)}
     return {
         'family': family, 'units': units, 'sido': sido_rows,
-        'national': {'adopted': total_in, 'total': len(aa.UNITS)},
+        'national': {'adopted': wide_n['adopted'] + basic_n['adopted'], 'total': wide_n['total'] + basic_n['total'],
+                     'wide': wide_n, 'basic': basic_n},
         'unassigned': sorted(unassigned, key=lambda o: o['name']),
     }
