@@ -1,14 +1,20 @@
 # 8단계(지역 현황 지도) 개발 전용 설정. 운영에는 쓰지 않는다.
 # 자동으로 적용되지 않는다. 쓸 때만 아래처럼 파일을 함께 지정한다.
 #   docker compose -f compose.yaml -f compose.map-dev.yaml up -d --wait
-# - 소스 폴더를 컨테이너 /app에 연결해 재빌드 없이 수정이 반영된다.
+# - 코드 폴더만 컨테이너에 연결해 재빌드 없이 수정이 반영된다.
+#   (.env는 연결하지 않는다. 600 권한이라 컨테이너 계정이 읽지 못하고, 설정값은 env_file로 이미 들어간다.)
 # - runserver 자동 재시작을 켠다.
 # - 브라우저(Chromium) 검사를 항상 켠다.
-# 원래대로 돌아가기: docker compose up -d --build --wait
+# 원래대로 돌아가기: docker compose up -d --wait
 services:
   web:
     environment:
       GITSN_RUN_BROWSER_TESTS: "1"
     volumes:
-      - ./:/app
+      - ./config:/app/config
+      - ./delivery:/app/delivery
+      - ./templates:/app/templates
+      - ./static:/app/static
+      - ./scripts:/app/scripts
+      - ./manage.py:/app/manage.py
     command: ["sh", "-c", "python scripts/wait_for_db.py && python manage.py migrate --noinput && exec python manage.py runserver 0.0.0.0:8000"]
