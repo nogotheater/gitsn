@@ -81,7 +81,8 @@ class PortalHttpScenarios(TestCase):
         self.assertContains(employee, '/performance/customers/')
         for text in ['10대', 'PRIVATE_MEMO_SENTINEL', 'SOURCE_SUBJECT_SENTINEL']:
             self.assertNotContains(employee, text)
-        self.assertContains(partner, '계약 기준 실적')
+        # 안내 줄 '계약 기준 실적 · 파트너사 열람'은 2026-10-21 형우 결정으로 삭제(납품현황 룩). 지금은 없어야 한다.
+        self.assertNotContains(partner, '파트너사 열람')
 
     def test_any_selected_products_across_live_contracts_and_filters_share_counts(self):
         query = {'products': [str(self.c.pk), str(self.i.pk)]}

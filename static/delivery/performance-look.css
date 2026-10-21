@@ -1,0 +1,135 @@
+/* 납품현황(/performance/) 룩 — 지역 현황(region-map.css)과 같은 톤. 이 페이지에만 불러오고 .performance-page 아래로 범위를 한정한다.
+   결정(2026-10-21 형우): 카드 배치는 그대로·룩만, 폰 메뉴 ☰ 한 줄, 안내 줄 삭제·폰 제목 "지슨 고객사", 유리 값은 지역 현황과 같게.
+   인쇄는 건드리지 않는다: 제목 축약 외의 모든 규칙은 @media screen 안에 둔다. */
+.performance-page .title-short{display:none}
+@media (max-width:639px){.performance-page .title-full{display:none}.performance-page .title-short{display:inline}}
+
+@media screen{
+  body:has([data-performance-page]){
+    --look-bg:#F2F5F8; --look-ink:var(--brand-navy); --look-ink-2:#56616E; --look-ink-3:#66717E;
+    --look-in:#4E7CC7; --look-in-strong:#2F5A9E; --look-wash:rgba(78,124,199,.09); --look-wash-2:rgba(78,124,199,.14);
+    --look-glass:rgba(255,255,255,.35); --look-glass-strong:rgba(255,255,255,.78); --look-glass-line:rgba(255,255,255,.75);
+    --look-blur:blur(28px) saturate(1.4); --look-shadow:0 8px 32px rgba(30,50,90,.07),0 1px 2px rgba(30,50,90,.04);
+    --look-cell:rgba(255,255,255,.62); --look-hair:rgba(18,38,68,.07);
+    --look-radius:8px; --look-radius-2:6px; --look-radius-3:4px;
+    background:var(--look-bg);
+  }
+  /* A: 제목 */
+  .performance-page .page-head{margin:12px 0 28px}
+  .performance-page .page-head h1{color:var(--look-ink)}
+}
+@media screen and (max-width:639px){
+  .performance-page .page-head{margin:8px 0 20px}
+  .performance-page .page-head .eyebrow{margin-bottom:6px;font-size:12px}
+  .performance-page .page-head h1{font-size:22px}
+}
+
+/* ===== B: 분류 탭 · 툴바 · 요약 ===== */
+@media screen{
+  /* 분류 탭: 유리 띠 + 세그먼트. 위에 붙는 동작(sticky top:0)은 그대로 — 카드가 밑으로 지나가면 유리 효과가 보인다 */
+  .performance-page .category-tabs{padding:4px;gap:2px;margin-bottom:16px;border:1px solid var(--look-glass-line);border-radius:var(--look-radius);background:var(--look-glass);-webkit-backdrop-filter:var(--look-blur);backdrop-filter:var(--look-blur);box-shadow:var(--look-shadow)}
+  .performance-page .tabs-track{gap:2px}
+  .performance-page .category-tab{min-height:40px;padding:0 14px;margin:0;border:0;border-radius:var(--look-radius-3);color:var(--look-ink-2);font-size:15px;font-weight:500;transition:background .15s ease,color .15s ease}
+  .performance-page .category-tab:hover{color:var(--look-ink);background:var(--look-wash)}
+  .performance-page .category-tab.is-active{background:#fff;color:var(--look-in-strong);font-weight:600;box-shadow:0 1px 2px rgba(18,38,68,.1),0 0 0 1px rgba(18,38,68,.04)}
+  .performance-page .tabs-scroll-button{width:32px;border-radius:var(--look-radius-3);background:transparent;color:var(--look-ink-2)}
+  .performance-page .tabs-scroll-button:hover{background:var(--look-wash);color:var(--look-ink)}
+  .performance-page .category-tabs::before{left:36px;background:linear-gradient(90deg,rgba(255,255,255,.9),rgba(255,255,255,0))}
+  .performance-page .category-tabs::after{right:36px;background:linear-gradient(270deg,rgba(255,255,255,.9),rgba(255,255,255,0))}
+
+  /* 툴바: 검색 6px, 필터·인쇄 4px, 카드/목록 전환은 지역 현황 전환 스위치와 같은 모양 */
+  .performance-page .list-search-field input[type=search]{border-radius:var(--look-radius-2);border-color:rgba(18,38,68,.14);background:var(--look-cell)}
+  .performance-page .list-search-field input[type=search]:focus{background:#fff;border-color:var(--look-in)}
+  .performance-page .filter-trigger,.performance-page .toolbar-print,.performance-page .mobile-bar>.button{border-radius:var(--look-radius-3)}
+  .performance-page .filter-trigger{background:var(--look-cell);border-color:rgba(18,38,68,.14)}
+  .performance-page .filter-trigger:hover{background:#fff}
+  .performance-page .view-toggle{height:auto;padding:4px;gap:2px;border:0;border-radius:var(--look-radius-2);background:rgba(220,227,234,.7);box-shadow:inset 0 0 0 1px rgba(18,38,68,.05)}
+  .performance-page .view-toggle button{min-height:36px;padding:0 14px;border:0;border-radius:var(--look-radius-3);background:transparent;color:var(--look-ink-2);font-weight:500;transition:background .15s ease,color .15s ease}
+  .performance-page .view-toggle button+button{border-left:0}
+  .performance-page .view-toggle button:hover{color:var(--look-ink)}
+  .performance-page .view-toggle button[aria-pressed=true]{background:#fff;color:var(--look-in-strong);font-weight:600;box-shadow:0 1px 2px rgba(18,38,68,.1),0 0 0 1px rgba(18,38,68,.04)}
+  .performance-page .view-toggle-compact button{padding:0 10px}
+
+  /* 요약: 유리 카드 + 큰 숫자 + 분류별 흰 셀 */
+  .performance-page .performance-summary{padding:28px 32px;border:1px solid var(--look-glass-line);border-radius:var(--look-radius);background:var(--look-glass);-webkit-backdrop-filter:var(--look-blur);backdrop-filter:var(--look-blur);box-shadow:var(--look-shadow)}
+  .performance-page .count-primary>p{color:var(--look-ink-2);font-size:14px;font-weight:500}
+  .performance-page .count-primary strong{color:var(--look-ink)}
+  .performance-page .category-counts{gap:8px;padding-top:20px;border-top:0}
+  .performance-page .category-counts>div{min-height:44px;padding:10px 14px;border-radius:var(--look-radius-2);background:var(--look-cell);color:var(--look-ink-2)}
+  .performance-page .category-counts strong{color:var(--look-ink)}
+}
+@media screen and (max-width:639px){
+  .performance-page .category-tabs{margin:0 0 12px}
+  .performance-page .category-tab{font-size:14px;padding:0 12px;min-height:44px}
+  .performance-page .performance-summary{padding:20px 16px}
+  .performance-page .category-counts{gap:6px}
+  .performance-page .category-counts>div{padding:10px 12px}
+  .performance-page .view-toggle-compact{height:auto}
+  .performance-page .view-toggle-compact button{min-height:36px}
+}
+
+/* ===== C: 카드 · 목록 보기 · 제품 칩·패널 · 폰 필터 시트 ===== */
+@media screen{
+  /* 분류 제목·목록 수 안내 */
+  .performance-page .section-label{color:var(--look-ink-2)}
+  .performance-page .section-label .hint{color:var(--look-ink-3)}
+  .performance-page .performance-category-heading{border-bottom-color:rgba(18,38,68,.08)}
+  .performance-page .performance-category-heading h2{color:var(--look-ink)}
+  .performance-page .category-total{color:var(--look-ink-2)}
+
+  /* 카드: 배치는 그대로, 반투명 흰 카드 8px · 로고 칸 6px · 마우스 오버 시 옅은 색조 */
+  .performance-page .performance-grid .customer-card{color:var(--look-ink)}
+  .performance-page .view-card .performance-grid .customer-card{border:1px solid var(--look-glass-line);border-radius:var(--look-radius);background:var(--look-cell);box-shadow:0 1px 2px rgba(30,50,90,.04);transition:background .15s ease,box-shadow .15s ease,border-color .15s ease}
+  .performance-page .view-card .performance-grid a.customer-card:hover{background:color-mix(in srgb,#fff 90%,var(--look-in));border-color:rgba(78,124,199,.28);box-shadow:var(--look-shadow)}
+  .performance-page .performance-grid .customer-card .symbol{border-radius:var(--look-radius-2);background:#fff;box-shadow:inset 0 0 0 1px var(--look-hair);color:var(--look-ink)}
+  .performance-page .performance-grid .customer-card p.muted{color:var(--look-ink-3)}
+
+  /* 목록 보기: 분류마다 흰 셀 한 장, 행은 지역 현황 기관 행처럼 */
+  .performance-page .view-list .performance-grid{padding:4px 8px;border:1px solid var(--look-glass-line);border-radius:var(--look-radius);background:var(--look-cell)}
+  .performance-page .view-list .performance-grid .customer-card{padding:10px 8px;border-radius:var(--look-radius-2);border-bottom:1px solid rgba(18,38,68,.06)}
+  .performance-page .view-list .performance-grid .customer-card:last-child{border-bottom:0}
+  .performance-page .view-list .performance-grid .customer-card:hover{background:var(--look-wash);border-color:rgba(18,38,68,.06)}
+  .performance-page .view-list .performance-grid .customer-card:last-child:hover{border-color:transparent}
+
+  /* 제품 패널(PC)·칩·적용된 조건 */
+  .performance-page .product-panel{border:1px solid var(--look-glass-line);border-radius:var(--look-radius);background:var(--look-glass);-webkit-backdrop-filter:var(--look-blur);backdrop-filter:var(--look-blur);box-shadow:var(--look-shadow)}
+  .performance-page .product-chip,.performance-page .active-chip{border-radius:var(--look-radius-3);border-color:rgba(18,38,68,.14);background:var(--look-cell)}
+  .performance-page .product-chip:hover,.performance-page .active-chip:hover{background:#fff}
+  .performance-page .product-chip.is-active{background:var(--brand-action);border-color:var(--brand-action)}
+  .performance-page .filter-panel-actions{border-top-color:rgba(18,38,68,.08)}
+
+  /* 폰 필터 시트: 유리 */
+  .performance-page .product-sheet::backdrop{background:rgba(16,36,59,.32)}
+  .performance-page .product-sheet form{border-radius:var(--look-radius) var(--look-radius) 0 0;background:var(--look-glass-strong);-webkit-backdrop-filter:var(--look-blur);backdrop-filter:var(--look-blur);border-top:1px solid var(--look-glass-line)}
+  .performance-page .product-sheet .filter-panel-actions{background:transparent}  /* 시트와 같은 유리로 보이게(겹친 흰 띠 없음) */
+
+  /* 빈 결과 */
+  .performance-page .empty{border:1px solid var(--look-glass-line);border-radius:var(--look-radius);background:var(--look-cell)}
+}
+
+/* ===== D: 폰 머리띠 ☰ 한 줄(지역 현황과 같은 폭 기준·같은 모양) · 하단 바 유리 ===== */
+.look-menu-btn{display:none}
+@media screen and (max-width:900px),screen and (max-width:1100px) and (orientation:portrait){
+  body:has([data-performance-page]) .topbar-inner{flex-wrap:nowrap;min-height:48px;padding-block:0;gap:8px}
+  body:has([data-performance-page]) .topbar nav,body:has([data-performance-page]) .topbar form{display:none}
+  body:has([data-performance-page]).look-menu-open .topbar-inner{flex-wrap:wrap;padding-bottom:8px}
+  body:has([data-performance-page]).look-menu-open .topbar nav{display:flex;order:3;width:100%;flex-direction:column;gap:0;border-top:1px solid var(--border-subtle);padding-top:4px;margin-top:0}
+  body:has([data-performance-page]).look-menu-open .topbar nav a{display:flex;align-items:center;min-height:44px;font-size:15px}
+  body:has([data-performance-page]).look-menu-open .topbar form{display:block;order:4;width:100%;margin-left:0}
+  body:has([data-performance-page]).look-menu-open .topbar form .button{min-height:44px;padding-inline:0}
+  .look-menu-btn{display:inline-flex;align-items:center;justify-content:center;margin-left:auto;width:44px;height:44px;padding:0;border:0;border-radius:6px;background:transparent;appearance:none}
+  .look-menu-btn span,.look-menu-btn span::before,.look-menu-btn span::after{display:block;width:20px;height:2px;border-radius:2px;background:var(--brand-navy);position:relative;content:""}
+  .look-menu-btn span::before{position:absolute;top:-6px}
+  .look-menu-btn span::after{position:absolute;top:6px}
+  body.look-menu-open .look-menu-btn span{background:transparent}
+  body.look-menu-open .look-menu-btn span::before{top:0;transform:rotate(45deg)}
+  body.look-menu-open .look-menu-btn span::after{top:0;transform:rotate(-45deg)}
+}
+@media screen and (max-width:639px){
+  /* 하단 바: 유리 띠, 누르는 곳은 모두 44px */
+  .performance-page .mobile-bar{background:var(--look-glass-strong);-webkit-backdrop-filter:var(--look-blur);backdrop-filter:var(--look-blur);border-top:1px solid var(--look-glass-line);box-shadow:0 -8px 32px rgba(30,50,90,.08)}
+  .performance-page .mobile-bar>.button{min-height:44px}
+  .performance-page .mobile-bar>.button.secondary{background:var(--look-cell);border-color:rgba(18,38,68,.14)}
+  .performance-page .view-toggle-compact{padding:0;gap:0;height:44px;border-radius:var(--look-radius-2)}
+  .performance-page .view-toggle-compact button{min-height:44px;width:44px;padding:0;justify-content:center;border-radius:var(--look-radius-2)}
+}

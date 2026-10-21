@@ -1,8 +1,9 @@
 {% extends 'planning/base.html' %}{% load delivery_display %}
 {% block title %}납품현황{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% versioned_static 'delivery/performance-look.css' %}">{% endblock %}
 {% block content %}
 <div class="performance-page" data-performance-page>
-  <div class="page-head"><div><p class="eyebrow">CUSTOMER REFERENCES</p><h1>지슨의 보안 솔루션과 함께하는 고객사</h1><p class="intro">계약 기준 실적 · {% if is_partner %}파트너사 열람{% else %}직원 열람{% endif %}</p></div></div>
+  <div class="page-head"><div><p class="eyebrow">CUSTOMER REFERENCES</p><h1><span class="title-full">지슨의 보안 솔루션과 함께하는 고객사</span><span class="title-short">지슨 고객사</span></h1></div></div>
 
   <nav class="category-tabs" aria-label="고객 분류" data-category-tabs>
     <button class="tabs-scroll-button" type="button" data-tabs-scroll="-1" aria-label="이전 분류 보기" hidden><span aria-hidden="true">‹</span></button>
@@ -53,9 +54,9 @@
   <div class="section-label"><span>표시 목록 <strong>{{ page.paginator.count }}</strong>개</span><span class="hint">분류별 · 이름순 · 집계 제외 장소가 포함되면 목록 수와 고객사 수가 다를 수 있습니다.{% if search_query %} 검색은 목록만 좁히며 고객사 수는 바뀌지 않습니다.{% endif %}</span></div>
   <div class="performance-categories" data-view-root>
     {% for group in list_groups %}
-    <section class="performance-category" aria-labelledby="category-{{ group.code }}" data-category="{{ group.code }}">
+    <section class="performance-category" aria-labelledby="category-{{ group.key }}" data-category="{{ group.code }}"{% if group.region %} data-region="{{ group.region }}"{% endif %}>
       <div class="performance-category-heading">
-        <h2 id="category-{{ group.code }}">{{ group.label }}{% if group.continued %}<span class="category-continued"> — 계속</span>{% endif %}</h2>
+        <h2 id="category-{{ group.key }}">{{ group.label }}{% if group.continued %}<span class="category-continued"> — 계속</span>{% endif %}</h2>
         <span class="category-total">{{ group.count }}곳</span>
         {% if is_partner and group.private_count %}<small class="category-private-note" data-testid="category-private-count">비공개 {{ group.private_count }}곳 포함</small>{% endif %}
       </div>

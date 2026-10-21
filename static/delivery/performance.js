@@ -81,4 +81,21 @@
   const defaultView = window.matchMedia('(max-width: 639px)').matches ? 'list' : 'card';
   setView(storedView === 'list' || storedView === 'card' ? storedView : defaultView, false);
   viewButtons.forEach(button => button.addEventListener('click', () => setView(button.dataset.view, true)));
+
+  // 폰 머리띠(D, 2026-10-21 형우: 지역 현황과 같은 ☰ 한 줄). 메뉴·로그아웃을 ☰ 안에 접는다. 보이는 폭은 CSS가 정한다.
+  const topbar = document.querySelector('.topbar-inner');
+  if (topbar && topbar.querySelector('nav, form')) {
+    const menu = document.createElement('button');
+    menu.type = 'button';
+    menu.className = 'look-menu-btn';
+    menu.setAttribute('aria-expanded', 'false');
+    menu.setAttribute('aria-label', '메뉴 열기');
+    menu.innerHTML = '<span aria-hidden="true"></span>';
+    menu.addEventListener('click', () => {
+      const open = document.body.classList.toggle('look-menu-open');
+      menu.setAttribute('aria-expanded', String(open));
+      menu.setAttribute('aria-label', open ? '메뉴 닫기' : '메뉴 열기');
+    });
+    topbar.appendChild(menu);
+  }
 })();

@@ -45,16 +45,22 @@ def project_targets(records, *, audience, category_codes=()):
     total = public_count = private_count = 0
     by_category = dict.fromkeys(category_codes, 0)
     private_by_category = dict.fromkeys(category_codes, 0)
+    # 권역별 섹션(C2): 분류·지역 쌍마다 센다. 키는 'category:region'.
+    by_category_region = {}
+    private_by_category_region = {}
     items = []
     for record in unique.values():
         if record.include_in_total:
             total += 1
             by_category[record.category] = by_category.get(record.category, 0) + 1
+            region_key = f'{record.category}:{record.region or ""}'
+            by_category_region[region_key] = by_category_region.get(region_key, 0) + 1
             if record.partner_public:
                 public_count += 1
             else:
                 private_count += 1
                 private_by_category[record.category] = private_by_category.get(record.category, 0) + 1
+                private_by_category_region[region_key] = private_by_category_region.get(region_key, 0) + 1
         if not record.show_in_list or (audience == 'partner' and not record.partner_public):
             continue
         items.append({
@@ -70,4 +76,5 @@ def project_targets(records, *, audience, category_codes=()):
     return {'items': items, 'counts': {
         'total': total, 'public': public_count, 'private': private_count,
         'by_category': by_category, 'private_by_category': private_by_category,
+        'by_category_region': by_category_region, 'private_by_category_region': private_by_category_region,
     }}

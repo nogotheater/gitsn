@@ -9,6 +9,7 @@ from django.utils import timezone
 from delivery.models import Category, Customer, SitePresentation
 from .access import audience_for_user
 from .audience_performance import current_performance_payload
+from .sections import section_of, sections as list_sections
 
 SCOPE_CHOICES = [('public', '공개 고객사만'), ('private', '비공개 고객사만'), ('all', '공개·비공개 모두')]
 
@@ -58,8 +59,12 @@ def print_document(user, cleaned, scope):
         count = payload['counts']['by_category'][code]
         if count:
             totals.append({'label': label, 'count': count})
+    # 섹션은 화면 목록과 같다: 지자체·의회는 권역별(C2, 형우 2026-10-21 '인쇄·PDF도 권역별').
+    for section in list_sections(payload['counts']):
+        label = section['label']
+        pair = (section['code'], section['region'])
         cards = []
-        for item in sorted((row for row in items if row['category'] == code), key=lambda row: (row['name'].casefold(), row['kind'], row['id'])):
+        for item in sorted((row for row in items if section_of(row['category'], row['region']) == pair), key=lambda row: (row['name'].casefold(), row['kind'], row['id'])):
             cards.append({'name': item['name'], 'symbol': item['name'][:1],
                           'region': '',
                           'logo': logos.get((item['kind'], item['id']), '')})

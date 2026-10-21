@@ -16,6 +16,7 @@ from .planning_views import planning_only, attach_errors
 from .services.access import audience_for_user, require_employee, require_manager
 from .services.accounts import account_role, account_revision, create_account, update_account, reset_account_password
 from .services.audience_performance import current_performance_payload
+from .services.sections import section_of, section_rank, sections as list_sections
 from .services.current_performance import customer_current_quantities, current_customers_with_any_products, current_site_presentations_with_any_products
 
 
@@ -78,9 +79,9 @@ def performance(request):
         payload = current_performance_payload(request.user, selected_product_ids=product_ids, categories=categories)
     else:
         payload = {'items': [], 'counts': {'total': 0, 'public': 0, 'private': 0, 'by_category': {}, 'private_by_category': {}}}
-    category_rank = {code: index for index, (code, _) in enumerate(Category.choices)}
     selected_ids = set(product_ids)
-    items = sorted(payload['items'], key=lambda row: (category_rank[row['category']], row['name'].casefold(), row['kind'], row['id']))
+    # 분류 → (지자체·의회는) 권역 → 이름 순(C2).
+    items = sorted(payload['items'], key=lambda row: (*section_rank(row['category'], row['region']), row['name'].casefold(), row['kind'], row['id']))
     for item in items:
         item['category_label'] = Category(item['category']).label
         item['region_label'] = Region(item['region']).label if item['region'] else ''
@@ -98,15 +99,18 @@ def performance(request):
     groups = [{'code': value, 'label': label, 'count': payload['counts']['by_category'].get(value, 0),
                'private_count': payload['counts']['private_by_category'].get(value, 0)} for value, label in Category.choices]
     page = Paginator(items, 24).get_page(request.GET.get('page'))
-    previous_category = items[page.start_index() - 2]['category'] if page.has_previous() else None
-    visible_categories = {item['category'] for item in items}
+    # 섹션은 분류 단위, 지자체·의회만 권역 단위(C2). 요약 칸(groups)은 분류 단위 그대로.
+    item_section = lambda item: section_of(item['category'], item['region'])
+    previous_section = item_section(items[page.start_index() - 2]) if page.has_previous() else None
+    visible_sections = {item_section(item) for item in items}
     list_groups = []
-    for group in groups:
-        rows = [item for item in page if item['category'] == group['code']]
-        # A counted-only/private-only category is still represented numerically,
+    for group in list_sections(payload['counts']):
+        section = (group['code'], group['region'])
+        rows = [item for item in page if item_section(item) == section]
+        # A counted-only/private-only section is still represented numerically,
         # once on the first page. Never fabricate cards for those customers.
-        if rows or (page.number == 1 and group['count'] and group['code'] not in visible_categories and not search):
-            list_groups.append({**group, 'items': rows, 'continued': bool(rows) and previous_category == group['code']})
+        if rows or (page.number == 1 and group['count'] and section not in visible_sections and not search):
+            list_groups.append({**group, 'items': rows, 'continued': bool(rows) and previous_section == section})
     # Every tab and chip is a link that toggles one value; products and categories are both multi-select.
     def toggled_url(products, chosen_categories):
         return filter_url(request.path, filter_query(products, chosen_categories, search))
