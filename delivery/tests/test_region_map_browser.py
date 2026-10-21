@@ -73,3 +73,31 @@ class RegionMapBrowserScenarios(StaticLiveServerTestCase):
                 expect(page.locator('[data-rmap-error]')).to_be_visible()
             finally:
                 browser.close()
+
+
+    def test_four_combinations_match_the_service_in_map_and_panel(self):
+        payload = region_map_payload()  # 브라우저 전에 계산
+        labels = {f['key']: f['label'] for f in payload['families']}
+        labels.update({t['key']: t['label'] for t in payload['targets']})
+        sido_order = [s['code'] for s in payload['sido']]
+        with sync_playwright() as engine:
+            browser = engine.chromium.launch()
+            try:
+                page = browser.new_page(viewport={'width': 1440, 'height': 900})
+                self.open_map(page)
+                for family in ('eavesdrop', 'camera'):
+                    for target in ('local', 'council'):
+                        page.locator('[data-rmap-switch="family"] button', has_text=labels[family]).click()
+                        page.locator('[data-rmap-switch="target"] button', has_text=labels[target]).click()
+                        expect(page.locator('[data-rmap]')).to_have_attribute('data-combo', f'{family}:{target}')
+                        combo = payload['combos'][f'{family}:{target}']
+                        expected = {c for c, s in combo['units'].items() if s['state'] == 'in'}
+                        self.assertEqual(self.painted(page), expected, f'{family}:{target}')
+                        expect(page.locator('[data-rmap-national] strong')).to_have_text(str(combo['national']['adopted']))
+                        rows = page.eval_on_selector_all('.rmap-sido-row', 'els => els.map(e => [e.dataset.sido, e.querySelector(".rmap-sido-count").textContent])')
+                        self.assertEqual([r[0] for r in rows], sido_order)  # 행정코드 순(순위 아님)
+                        self.assertEqual([r[1] for r in rows], [f"{s['adopted']} / {s['total']}" for s in combo['sido']])
+                        pressed = page.eval_on_selector_all('[aria-pressed="true"]', 'els => els.map(e => e.textContent)')
+                        self.assertEqual(sorted(pressed), sorted([labels[family], labels[target]]))
+            finally:
+                browser.close()

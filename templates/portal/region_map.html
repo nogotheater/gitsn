@@ -3,19 +3,32 @@
 {% block content %}
 <link rel="stylesheet" href="{% versioned_static 'delivery/region-map.css' %}">
 <section class="rmap" data-rmap data-map-url="{% versioned_static 'delivery/map/korea-lite.json' %}" aria-labelledby="rmap-title">
-  <header class="rmap-head">
-    <div class="rmap-title-row">
-      <h1 id="rmap-title">지자체 고객사 지도</h1>
-      <p class="rmap-basis">{% if basis_date %}{{ basis_date|date:'Y.m.d' }} 기준{% endif %}</p>
-    </div>
-    <div class="rmap-controls" data-rmap-controls></div>
-  </header>
   <div class="rmap-stage" data-rmap-stage>
-    <div class="rmap-canvas" data-rmap-canvas role="img" aria-label="시군구 지도"></div>
-    <p class="rmap-error" data-rmap-error hidden>지도 경계 파일을 불러오지 못했습니다. 새로고침해 주세요. 문제가 계속되면 기획팀에 알려 주세요.</p>
-    <aside class="rmap-panel" data-rmap-panel aria-label="요약과 목록"></aside>
+    <div class="rmap-canvas" data-rmap-canvas></div>
+    <p class="rmap-error" data-rmap-error role="alert" hidden>지도 경계 파일을 불러오지 못했습니다. 새로고침해 주세요. 계속 안 되면 기획팀에 알려 주세요.</p>
+
+    <header class="rmap-bar">
+      <div class="rmap-heading">
+        <h1 id="rmap-title">지자체 고객사 지도</h1>
+        {% if basis_date %}<p class="rmap-basis">{{ basis_date|date:'Y.m.d' }} 기준</p>{% endif %}
+      </div>
+      <div class="rmap-switches">
+        <div class="rmap-switch" role="group" aria-label="제품군" data-rmap-switch="family"></div>
+        <div class="rmap-switch" role="group" aria-label="대상" data-rmap-switch="target"></div>
+      </div>
+      <ul class="rmap-legend" aria-label="범례">
+        <li><span class="rmap-swatch is-in" aria-hidden="true"></span>도입</li>
+        <li><span class="rmap-swatch" aria-hidden="true"></span>미도입</li>
+      </ul>
+    </header>
+
+    <aside class="rmap-panel" data-rmap-panel aria-live="polite">
+      <div class="rmap-summary" data-rmap-summary></div>
+      <ol class="rmap-sido-list" data-rmap-sido-list aria-label="시·도별 도입 현황"></ol>
+    </aside>
+
+    <p class="rmap-source">경계: 통계청 SGIS, vuski/admdongkor (CC BY 4.0)</p>
   </div>
-  <p class="rmap-source">경계: 통계청 SGIS, vuski/admdongkor (CC BY 4.0)</p>
 </section>
 {{ payload|json_script:"rmap-data" }}
 <script src="{% versioned_static 'delivery/region-map.js' %}" defer></script>

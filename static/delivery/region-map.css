@@ -1,18 +1,53 @@
 /* 지역 현황 지도(8단계) 전용 스타일. 모든 선택자는 .rmap 아래에만 둔다(기존 화면에 새지 않게).
-   이름 규칙: rmap-<영역>(-<요소>), 상태는 is-<상태>. 색·글꼴은 tokens.css 변수를 쓴다.
-   6a: 뼈대만. 톤(레퍼런스 R1·R2)은 6b에서 입힌다. */
-.rmap{--rmap-in:var(--brand-action);--rmap-out:#E8ECF1;--rmap-line:#FFFFFF;--rmap-sido-line:#B8C1CC;--rmap-sea:#F4F6F9}
-.rmap{width:100vw;margin-left:calc(50% - 50vw);margin-top:-36px;background:var(--rmap-sea);padding:24px 48px 16px}
-.rmap-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:16px;margin-bottom:12px}
-.rmap-title-row{display:flex;align-items:baseline;gap:12px}
-.rmap-title-row h1{font-size:24px}
-.rmap-basis{color:var(--text-secondary);font-size:14px}
-.rmap-stage{position:relative;min-height:70vh}
-.rmap-canvas svg{display:block;width:100%;height:auto;max-height:78vh}
-.rmap-unit{fill:var(--rmap-out);stroke:var(--rmap-line);stroke-width:.6;vector-effect:non-scaling-stroke}
+   이름 규칙: rmap-<영역>(-<요소>), 상태는 is-<상태>. 글꼴·기본 색은 tokens.css 변수를 쓴다.
+   톤: 레퍼런스 R1(outletbuddy)·R2(Floware) — 옅은 회청 바탕, 떠 있는 반투명 패널, 강조색은 도입 면에만. */
+.rmap{
+  --rmap-sea:#F2F5F8; --rmap-out:#DFE5EC; --rmap-in:#3E7BDF; --rmap-in-strong:#2C62BF;
+  --rmap-edge:#FFFFFF; --rmap-sido-edge:#A9B5C3; --rmap-ink:var(--brand-navy); --rmap-ink-2:#5F6B78; --rmap-ink-3:#8A95A1;
+  --rmap-glass:rgba(255,255,255,.84); --rmap-glass-line:rgba(255,255,255,.9); --rmap-shadow:0 10px 30px rgba(18,38,68,.08),0 1px 2px rgba(18,38,68,.06);
+  --rmap-track:#E7ECF2; --rmap-radius:16px;
+}
+.rmap{width:100vw;margin-left:calc(50% - 50vw);margin-top:-36px;background:var(--rmap-sea);color:var(--rmap-ink)}
+.rmap-stage{position:relative;height:calc(100vh - 65px);min-height:640px;overflow:hidden}
+.rmap-canvas{position:absolute;inset:0;padding:120px 404px 44px 40px;display:flex;align-items:center;justify-content:center}
+.rmap-canvas svg{display:block;width:100%;height:100%}
+.rmap-unit{fill:var(--rmap-out);stroke:var(--rmap-edge);stroke-width:.7;vector-effect:non-scaling-stroke;stroke-linejoin:round;transition:fill .18s ease}
 .rmap-unit.is-in{fill:var(--rmap-in)}
-.rmap-sido{fill:none;stroke:var(--rmap-sido-line);stroke-width:1;vector-effect:non-scaling-stroke;pointer-events:none}
-.rmap-error{padding:24px;color:var(--error)}
-.rmap-source{margin-top:8px;font-size:12px;color:var(--text-secondary)}
-@media(max-width:1023px){.rmap{padding-inline:24px}}
-@media(max-width:639px){.rmap{padding-inline:16px;margin-top:-24px}}
+.rmap-sido{fill:none;stroke:var(--rmap-sido-edge);stroke-width:1.1;vector-effect:non-scaling-stroke;stroke-linejoin:round;pointer-events:none}
+.rmap-error{position:absolute;left:40px;top:140px;max-width:420px;padding:16px 20px;border-radius:12px;background:var(--error-bg);color:var(--error);font-size:14px;z-index:3}
+
+/* 왼쪽 위: 제목·전환·범례 */
+.rmap-bar{position:absolute;left:40px;top:28px;right:420px;display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;z-index:2}
+.rmap-heading{display:flex;align-items:baseline;gap:12px;flex-basis:100%}
+.rmap-heading h1{font-size:24px;font-weight:700;letter-spacing:-.02em;color:var(--rmap-ink)}
+.rmap-basis{font-size:14px;color:var(--rmap-ink-3);font-variant-numeric:tabular-nums}
+.rmap-switches{display:flex;flex-wrap:wrap;gap:10px}
+.rmap-switch{display:inline-flex;padding:4px;gap:2px;border-radius:999px;background:var(--rmap-track)}
+.rmap-switch button{appearance:none;border:0;background:transparent;color:var(--rmap-ink-2);font-size:14px;font-weight:500;min-height:36px;padding:0 16px;border-radius:999px;white-space:nowrap}
+.rmap-switch button:hover{color:var(--rmap-ink)}
+.rmap-switch button[aria-pressed="true"]{background:#fff;color:var(--rmap-in-strong);font-weight:600;box-shadow:0 1px 3px rgba(18,38,68,.12)}
+.rmap-legend{display:flex;gap:14px;list-style:none;margin:0;padding:0;font-size:13px;color:var(--rmap-ink-2)}
+.rmap-legend li{display:inline-flex;align-items:center;gap:6px}
+.rmap-swatch{width:12px;height:12px;border-radius:4px;background:var(--rmap-out);box-shadow:inset 0 0 0 1px rgba(18,38,68,.06)}
+.rmap-swatch.is-in{background:var(--rmap-in)}
+
+/* 오른쪽: 떠 있는 패널 */
+.rmap-panel{position:absolute;top:24px;right:24px;bottom:24px;width:356px;display:flex;flex-direction:column;background:var(--rmap-glass);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);border:1px solid var(--rmap-glass-line);border-radius:var(--rmap-radius);box-shadow:var(--rmap-shadow);z-index:2;overflow:hidden}
+.rmap-summary{padding:24px 24px 20px;border-bottom:1px solid rgba(18,38,68,.07)}
+.rmap-summary-label{font-size:13px;color:var(--rmap-ink-2)}
+.rmap-summary-value{margin-top:6px;display:flex;align-items:baseline;gap:6px;font-variant-numeric:tabular-nums}
+.rmap-summary-value strong{font-size:44px;line-height:1;font-weight:700;letter-spacing:-.03em;color:var(--rmap-ink)}
+.rmap-summary-value span{font-size:20px;color:var(--rmap-ink-3)}
+.rmap-summary-bar{margin-top:14px}
+.rmap-sido-list{list-style:none;margin:0;padding:8px 12px 16px;overflow-y:auto;flex:1;scrollbar-width:thin;scrollbar-color:#C9D2DC transparent}
+.rmap-sido-row{display:grid;grid-template-columns:64px 1fr 56px;align-items:center;gap:12px;width:100%;min-height:44px;padding:0 12px;border:0;border-radius:10px;background:transparent;color:var(--rmap-ink);font-size:14px;text-align:left}
+.rmap-sido-row:hover{background:rgba(62,123,223,.07)}
+.rmap-sido-name{font-weight:600}
+.rmap-sido-count{text-align:right;font-variant-numeric:tabular-nums;color:var(--rmap-ink-2)}
+.rmap-sido-count b{color:var(--rmap-ink);font-weight:600}
+.rmap-meter{display:block;height:6px;border-radius:999px;background:var(--rmap-track);overflow:hidden}
+.rmap-meter i{display:block;height:100%;border-radius:inherit;background:var(--rmap-in)}
+
+.rmap-source{position:absolute;left:40px;bottom:14px;font-size:12px;color:var(--rmap-ink-3);z-index:1}
+@media (prefers-reduced-motion:reduce){.rmap-unit{transition:none}}
+@media(max-width:639px){.rmap{margin-top:-24px}}
