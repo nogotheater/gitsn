@@ -1,0 +1,113 @@
+"""고객사 이름·분류·권역으로 소재지(면 또는 시·도 코드)와 기관 유형을 추정한다.
+
+지역 현황 지도(8단계)용. DB를 쓰지 않는 순수 함수다.
+- 추정은 "제안"이다. 확신할 수 없으면 소재지를 비워 두고 이유를 돌려준다. 기획팀이 고른다.
+- 저장된 값을 덮어쓰지 않는다. 비어 있을 때 채우는 데만 쓴다.
+"""
+import re
+from dataclasses import dataclass
+
+from . import admin_areas as aa
+
+ADMIN = 'admin'
+FACILITY = 'facility'
+
+# 고객사 권역(Region) → 해당 시·도 코드 (지금 시스템의 5권역. 제주는 권역 대응표가 아직 [확인 필요])
+REGION_SIDO = {
+    'capital': {'11', '28', '41'},
+    'chungcheong': {'30', '36', '43', '44'},
+    'honam': {'12', '52'},
+    'yeongnam': {'26', '27', '31', '47', '48'},
+    'gangwon': {'51'},
+}
+
+# 시·도를 가리키는 이름(정식·예전·줄임) → 시·도 코드. 긴 이름부터 맞춘다.
+SIDO_NAMES = {name: code for code, name, _short in aa.SIDO}
+SIDO_NAMES.update({
+    '광주광역시': '12', '전라남도': '12', '전라북도': '52', '강원도': '51',
+    '세종시': '36', '서울시': '11', '부산시': '26', '대구시': '27', '인천시': '28',
+    '대전시': '30', '울산시': '31', '제주도': '50',
+})
+_SIDO_ORDER = sorted(SIDO_NAMES, key=len, reverse=True)
+
+# 행정기관으로 보는 이름 꼬리: (없음) / 청 / 의회 / 시청·군청·구청·도청 / (○○청사)
+_ADMIN_TAIL = re.compile(r'^(청|의회|시청|군청|구청|도청|본청)?\s*(\([^)]*청사\))?$')
+
+_UNITS_BY_NAME = {}
+for _code, _name, _sido, _whole in aa.UNITS:
+    _UNITS_BY_NAME.setdefault(_name, []).append(_code)
+
+
+@dataclass(frozen=True)
+class Guess:
+    location_code: str     # 면 코드(5자리) / 시·도 코드(2자리) / '' (모름)
+    institution_type: str  # ADMIN / FACILITY
+    reason: str            # 사람이 읽을 근거
+
+
+def _sido_location(sido):
+    """세종·제주는 시·도 전체가 한 면이라 광역 기관도 면 코드로 둔다."""
+    if sido in ('36', '50'):
+        return aa.units_in(sido)[0]
+    return sido
+
+
+def _match_unit(text, sidos):
+    """text 맨 앞에서 면 이름을 찾는다. 반환: (후보 코드들, 남은 꼬리)."""
+    best = None
+    for name, codes in _UNITS_BY_NAME.items():
+        if text.startswith(name):
+            cand = [c for c in codes if sidos is None or aa.UNIT_BY_CODE[c][1] in sidos]
+            if cand and (best is None or len(name) > len(best[0])):
+                best = (name, cand)
+    if not best:
+        return [], text
+    return best[1], text[len(best[0]):]
+
+
+def _admin_tail(tail):
+    return bool(_ADMIN_TAIL.match(tail.strip()))
+
+
+def guess_location(name, category, region):
+    """name: 고객사 명칭, category: 'local'/'council'/…, region: 'capital' 등 권역 코드."""
+    text = re.sub(r'\s+', ' ', (name or '').strip())
+    region_sidos = REGION_SIDO.get(region)
+
+    # 1) 시·도 이름으로 시작하는 경우
+    for sname in _SIDO_ORDER:
+        if not text.startswith(sname):
+            continue
+        sido = SIDO_NAMES[sname]
+        rest = text[len(sname):].strip()
+        if _admin_tail(rest):
+            return Guess(_sido_location(sido), ADMIN, f'시·도 기관: {sname}')
+        codes, tail = _match_unit(rest, {sido})
+        if len(codes) == 1:
+            kind = ADMIN if _admin_tail(tail) else FACILITY
+            return Guess(codes[0], kind, f'{sname} 안의 {aa.UNIT_BY_CODE[codes[0]][0]}')
+        if sido == '28' and rest.split(' ')[0].rstrip('청의회') in ('중구', '동구', '서구'):
+            old = rest.split(' ')[0].rstrip('청의회')
+            new = ', '.join(aa.UNIT_BY_CODE[c][0] for c in aa.INCHEON_REORG[old])
+            return Guess('', ADMIN if _admin_tail(rest[len(old):]) else FACILITY,
+                         f'인천 개편(2026-07): 예전 {old} → {new} 중 선택 필요')
+        return Guess(_sido_location(sido), FACILITY, f'{sname} 소속 시설·공기업(시·도 단위)')
+
+    # 2) 면 이름으로 시작하는 경우 (권역으로 같은 이름 구분)
+    codes, tail = _match_unit(text, region_sidos)
+    if not codes and region_sidos is not None:
+        any_codes, _ = _match_unit(text, None)
+        if any_codes:
+            names = ', '.join(sorted(f'{aa.SIDO_BY_CODE[aa.UNIT_BY_CODE[c][1]][1]} {aa.UNIT_BY_CODE[c][0]}' for c in any_codes))
+            return Guess('', ADMIN if _admin_tail(tail) else FACILITY, f'권역과 맞는 후보 없음(후보: {names})')
+    if len(codes) == 1:
+        sep = tail[:1]
+        if _admin_tail(tail) or sep == '·':
+            return Guess(codes[0], ADMIN, f'면 이름: {aa.UNIT_BY_CODE[codes[0]][0]}' + (' (·로 묶인 기록)' if sep == '·' else ''))
+        return Guess(codes[0], FACILITY, f'{aa.UNIT_BY_CODE[codes[0]][0]} 소속 시설')
+    if len(codes) > 1:
+        names = ', '.join(sorted(f'{aa.SIDO_BY_CODE[aa.UNIT_BY_CODE[c][1]][1]} {aa.UNIT_BY_CODE[c][0]}' for c in codes))
+        return Guess('', ADMIN if _admin_tail(tail) else FACILITY, f'후보 여러 곳: {names}')
+
+    # 3) 이름으로 위치를 알 수 없음 → 시설로 보고 비워 둔다
+    return Guess('', FACILITY, '이름에서 위치를 찾지 못함')

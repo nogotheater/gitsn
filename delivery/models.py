@@ -22,6 +22,11 @@ class Region(models.TextChoices):
     YEONGNAM = "yeongnam", "영남권"
     GANGWON = "gangwon", "강원권"
 
+class InstitutionType(models.TextChoices):
+    """지역 현황 지도(8단계): 시군구 면을 칠하는 기관인지 구분한다."""
+    ADMIN = "admin", "행정기관"
+    FACILITY = "facility", "시설·공기업"
+
 class DisplayKind(models.TextChoices):
     CUSTOMER = "customer", "고객사"
     SITE = "site", "설치 장소"
@@ -66,6 +71,11 @@ class Customer(PresentationFields):
     # Manual duplicate consolidation only (stage 6). Never set automatically.
     merged_into = models.ForeignKey("self", null=True, blank=True, on_delete=models.PROTECT, related_name="merged_duplicates")
     merged_at = models.DateTimeField("통합된 일시", null=True, blank=True)
+    # 지역 현황 지도(8단계). 모두 선택 입력이다.
+    # location_code: 면 코드(5자리) 또는 시·도 코드(2자리). 값 목록은 delivery.domain.admin_areas가
+    # 관리하고 모델에는 choices를 걸지 않는다(경계 갱신 때 마이그레이션이 생기지 않게).
+    location_code = models.CharField("소재지", max_length=5, blank=True)
+    institution_type = models.CharField("기관 유형", max_length=16, choices=InstitutionType.choices, blank=True)
 
     class Meta:
         permissions = [("manage_delivery", "Can manage delivery data and local accounts")]
