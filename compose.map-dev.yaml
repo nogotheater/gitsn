@@ -1,0 +1,14 @@
+# 8단계(지역 현황 지도) 개발 전용 설정. 운영에는 쓰지 않는다.
+# 자동으로 적용되지 않는다. 쓸 때만 아래처럼 파일을 함께 지정한다.
+#   docker compose -f compose.yaml -f compose.map-dev.yaml up -d --wait
+# - 소스 폴더를 컨테이너 /app에 연결해 재빌드 없이 수정이 반영된다.
+# - runserver 자동 재시작을 켠다.
+# - 브라우저(Chromium) 검사를 항상 켠다.
+# 원래대로 돌아가기: docker compose up -d --build --wait
+services:
+  web:
+    environment:
+      GITSN_RUN_BROWSER_TESTS: "1"
+    volumes:
+      - ./:/app
+    command: ["sh", "-c", "python scripts/wait_for_db.py && python manage.py migrate --noinput && exec python manage.py runserver 0.0.0.0:8000"]
