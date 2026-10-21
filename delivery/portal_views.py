@@ -258,3 +258,14 @@ def account_password(request, user_id):
             messages.success(request, '비밀번호를 재설정했습니다. 이 계정은 새 비밀번호로 다시 로그인해야 합니다.')
             return redirect('accounts')
     return render(request, 'portal/account_password.html', {'form': form, 'editing_user': user})
+
+
+@employee_only
+@require_GET
+def region_map(request):
+    """8단계 지역 현황(지자체·의회 지도). 직원 전용."""
+    from .services.region_map import basis_date, region_map_payload
+    return render(request, 'portal/region_map.html', {
+        'payload': region_map_payload(),
+        'basis_date': basis_date(),
+    })

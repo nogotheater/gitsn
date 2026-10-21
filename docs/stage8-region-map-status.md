@@ -9,7 +9,9 @@
 | 0 | 백업 `backups/gitsn-delivery_backup_2026-10-21`, 복원 확인(고객사 514·계약 919·계약 제품 948 일치), 로컬 git | 통과 |
 | 0.5 | 개발 전용 `compose.map-dev.yaml`(코드 폴더만 연결, 브라우저 검사 켬) | 기준 검사 118/118, 건너뜀 0 |
 | 1a·1b | 경계: admdongkor ver20260701 → 면 229(기초 227 + 세종 + 제주), 시·도 16. `static/delivery/map/`, `delivery/domain/admin_areas.py`, `scripts/map_boundaries/` | 겹침 0, 면적 차이 0%, 전국용 173KB |
-| 2 | Customer.location_code / institution_type(선택 입력, 마이그레이션 0006), 추정 규칙 `delivery/domain/locations.py` | (진행 중) |
+| 2 | Customer.location_code / institution_type(선택 입력, 마이그레이션 0006), 추정 규칙 `delivery/domain/locations.py` | 적용·되돌리기·재적용 통과, 검사 135/135 |
+| 3 | `fill_locations` 대조표 → 형우 확인 → 반영(177곳, 불일치 0). 소재지 원칙: 물리적 위치가 아니라 상위기관. 시스템 데이터 수정(형우): 광양시 Alpha-C 계약 종료, 상주은모래비치 계약 종료 | 전국 대조 차이 4건: 9월 이후 신규 2(고창군 C, 경산시 S), 9월 PDF 오류 2(광주 남구·광산구를 '의회'로 표시 — 실제는 지자체 고객이며 의회 고객은 없음, 형우 확인 13:21). 데이터 누락 0 |
+| 5 | 지도 계산 `delivery/domain/region_map.py`, `delivery/services/region_map.py` | 검사 161/161. 실데이터: 도청×지자체 91면, 불법촬영×지자체 25면(+시설 아이콘 4면), 도청×의회 34면, 불법촬영×의회 0면(광역의회 2곳은 광역 줄) |
 
 ## 고객사(Customer)가 만들어지거나 바뀌는 경로 (2단계 조사)
 | 경로 | 위치 | 소재지·기관 유형 처리 |

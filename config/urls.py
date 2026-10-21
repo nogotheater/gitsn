@@ -11,6 +11,7 @@ urlpatterns = [
     path("login/", portal.DeliveryLoginView.as_view(), name="login"),
     path("logout/", LogoutView.as_view(), name="logout"),
     path("performance/", portal.performance, name="performance"),
+    path("performance/map/", portal.region_map, name="region-map"),
     path("performance/print/", printing.preview, name="print-preview"),
     path("performance/print/pdf/", printing.download, name="print-download"),
     path("performance/customers/<uuid:customer_id>/", portal.customer_detail, name="employee-customer"),
