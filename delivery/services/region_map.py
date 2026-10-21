@@ -1,5 +1,6 @@
 """지역 현황 지도(8단계): DB에서 지자체·의회 기록을 읽어 네 조합(제품군 × 대상)의 지도 데이터를 만든다."""
 from django.db.models import Max
+from django.utils import timezone
 from django.urls import reverse
 
 from delivery.domain import admin_areas as aa
@@ -33,15 +34,14 @@ def _records(category):
 
 
 def basis_date():
-    """지자체·의회 고객사와 그 계약 중 가장 최근 수정일."""
+    """실적 기준일: 지자체·의회 고객사 계약의 가장 최근 수정일(한국 시간 날짜).
+    소재지·심볼처럼 지도 표시만 바꾸는 수정은 기준일을 움직이지 않는다(리뷰 7, 2026-10-21 형우 확정)."""
     cats = [Category.LOCAL, Category.COUNCIL]
-    a = Customer.objects.filter(category__in=cats).aggregate(m=Max('updated_at'))['m']
-    b = Contract.objects.filter(customer__category__in=cats).aggregate(m=Max('updated_at'))['m']
-    latest = max([d for d in (a, b) if d], default=None)
-    return latest.date() if latest else None
+    latest = Contract.objects.filter(customer__category__in=cats).aggregate(m=Max('updated_at'))['m']
+    return timezone.localdate(latest) if latest else None
 
 
-def region_map_payload():
+def region_map_payload(show_unassigned=True):
     """화면에 넘길 데이터. 네 조합을 한 번에 만들어 전환할 때 서버를 다시 부르지 않게 한다."""
     combos = {}
     for tkey, category, _label in TARGETS:
@@ -52,7 +52,8 @@ def region_map_payload():
                 'national': m['national'],
                 'units': {code: slot for code, slot in m['units'].items() if slot['state'] == 'in' or slot['facilities']},
                 'sido': m['sido'],
-                'unassigned': m['unassigned'],
+                # 미지정 기관 목록은 기획팀(관리자)에게만 보낸다(리뷰 9). 다른 직원에게는 페이지 소스에도 넣지 않는다
+                'unassigned': m['unassigned'] if show_unassigned else [],
             }
     return {
         'version': aa.BOUNDARY_VERSION,

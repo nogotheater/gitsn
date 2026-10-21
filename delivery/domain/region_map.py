@@ -80,11 +80,10 @@ def compute_map(records, family):
         codes = aa.units_in(code)
         whole = aa.UNIT_BY_CODE[codes[0]][2] if len(codes) == 1 else False
         adopted = [c for c in codes if units[c]['state'] == 'in']
+        # 세종·제주: 광역 기관이 곧 그 한 면이다. 도입한 곳 목록에만 두고 광역 줄에는 다시 넣지 않는다(리뷰 24)
         wide_orgs = list(wide[code]['orgs'])
-        if whole:  # 세종·제주: 광역 기관이 곧 그 한 면이다
-            wide_orgs = units[codes[0]]['orgs'] + wide_orgs
         sido_rows.append({
-            'code': code, 'name': name, 'short': short,
+            'code': code, 'name': name, 'short': short, 'whole': whole,
             'adopted': len(adopted), 'total': len(codes),
             'wide_orgs': sorted(wide_orgs, key=lambda o: o['name']),
             'wide_facilities': sorted(wide[code]['facilities'], key=lambda o: o['name']),

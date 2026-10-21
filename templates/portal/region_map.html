@@ -1,15 +1,10 @@
 {% extends 'planning/base.html' %}{% load delivery_display static %}
 {% block title %}지역 현황{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% versioned_static 'delivery/region-map.css' %}">{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="{% versioned_static 'delivery/region-map.css' %}">
 <section class="rmap" data-rmap data-map-url="{% versioned_static 'delivery/map/korea-lite.json' %}" data-sido-base="{% static 'delivery/map/sido/' %}" aria-labelledby="rmap-title">
   <div class="rmap-stage" data-rmap-stage>
-    <div class="rmap-canvas" data-rmap-canvas></div>
-    <div class="rmap-tip" data-rmap-tip role="tooltip" hidden></div>
-    <div class="rmap-card" data-rmap-card role="dialog" aria-modal="false" aria-label="기관 정보" hidden></div>
-    <p class="rmap-error" data-rmap-error role="alert" hidden>지도 경계 파일을 불러오지 못했습니다. 새로고침해 주세요. 계속 안 되면 기획팀에 알려 주세요.</p>
-
-    <header class="rmap-bar">
+    <header class="rmap-bar" data-rmap-bar>
       <div class="rmap-heading">
         <h1 id="rmap-title">지자체 고객사 지도</h1>
         {% if basis_date %}<p class="rmap-basis">{{ basis_date|date:'Y.m.d' }} 기준</p>{% endif %}
@@ -25,16 +20,23 @@
       </ul>
     </header>
 
-    <aside class="rmap-panel" data-rmap-panel aria-live="polite">
+    <div class="rmap-canvas" data-rmap-canvas>
+      {% if payload_error %}<p class="rmap-error" role="alert">지도 자료를 계산하지 못했습니다. 잠시 뒤 새로고침해 주십시오. 계속 안 되면 기획팀에 알려 주십시오.</p>{% endif %}
+    </div>
+    <p class="rmap-error" data-rmap-error role="alert" hidden>지도 경계 파일을 불러오지 못했습니다. 새로고침해 주십시오. 계속 안 되면 기획팀에 알려 주십시오.</p>
+    <div class="rmap-tip" data-rmap-tip role="tooltip" hidden></div>
+    <div class="rmap-card" data-rmap-card role="dialog" aria-modal="false" aria-label="기관 정보" hidden></div>
+
+    <aside class="rmap-panel" data-rmap-panel aria-label="도입 현황">
       <button class="rmap-sheet-handle" type="button" data-rmap-sheet-toggle aria-expanded="false" aria-label="목록 펼치기"><span aria-hidden="true"></span></button>
       <div class="rmap-panel-head" data-rmap-panel-head></div>
-      <div class="rmap-summary" data-rmap-summary></div>
+      <div class="rmap-summary" data-rmap-summary aria-live="polite"></div>
       <div class="rmap-panel-body" data-rmap-panel-body></div>
     </aside>
 
     <p class="rmap-source">경계: 통계청 SGIS, vuski/admdongkor (CC BY 4.0)</p>
   </div>
 </section>
-{{ payload|json_script:"rmap-data" }}
-<script src="{% versioned_static 'delivery/region-map.js' %}" defer></script>
+{% if payload %}{{ payload|json_script:"rmap-data" }}
+<script src="{% versioned_static 'delivery/region-map.js' %}" defer></script>{% endif %}
 {% endblock %}

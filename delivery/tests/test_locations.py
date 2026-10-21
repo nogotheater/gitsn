@@ -93,3 +93,16 @@ class LocationGuessFixes(TestCase):
     def test_branch_office_without_parentheses(self):
         g = guess_location('전남광주통합특별시 광주청사', 'local', 'honam')
         self.assertEqual((g.location_code, g.institution_type), ('12', ADMIN))
+
+
+class JejuScenarios(TestCase):
+    """리뷰 40: 제주는 권역 대응표가 없다."""
+    def test_jeju_province_office_regardless_of_region(self):
+        g = guess_location('제주특별자치도청', 'local', 'honam')
+        self.assertEqual((g.location_code, g.institution_type), ('50000', ADMIN))
+
+    def test_jeju_administrative_cities_belong_to_the_province(self):
+        g = guess_location('제주시청', 'local', 'honam')
+        self.assertEqual((g.location_code, g.institution_type), ('50000', FACILITY))
+        g = guess_location('서귀포시청', 'local', '')
+        self.assertEqual((g.location_code, g.institution_type), ('50000', FACILITY))

@@ -264,8 +264,16 @@ def account_password(request, user_id):
 @require_GET
 def region_map(request):
     """8단계 지역 현황(지자체·의회 지도). 직원 전용."""
+    import logging
     from .services.region_map import basis_date, region_map_payload
-    return render(request, 'portal/region_map.html', {
-        'payload': region_map_payload(),
-        'basis_date': basis_date(),
-    })
+    manager = True
+    try:
+        require_manager(request.user)
+    except PermissionDenied:
+        manager = False
+    try:
+        payload, basis = region_map_payload(show_unassigned=manager), basis_date()
+    except DatabaseError:
+        logging.getLogger(__name__).exception('region map payload failed')
+        return render(request, 'portal/region_map.html', {'payload_error': True}, status=503)
+    return render(request, 'portal/region_map.html', {'payload': payload, 'basis_date': basis})

@@ -70,11 +70,14 @@ class ComputeMapScenarios(TestCase):
         self.assertEqual(chungnam['adopted'], 0)
         self.assertEqual(m['national']['adopted'], 0)
 
-    def test_sejong_office_paints_its_single_unit_and_shows_on_the_wide_line(self):
+    def test_sejong_office_paints_its_single_unit_once(self):
+        # 리뷰 24(2026-10-21 형우 승인): 세종·제주 기관은 도입한 곳 목록에만 두고 광역 줄에 다시 넣지 않는다
         m = compute_map([rec('세종특별자치시', '36110', contracts=[k('P', 'Alpha-P')])], EAVESDROP)
         sejong = m['sido'][[s['code'] for s in m['sido']].index('36')]
         self.assertEqual((sejong['adopted'], sejong['total']), (1, 1))
-        self.assertEqual([o['name'] for o in sejong['wide_orgs']], ['세종특별자치시'])
+        self.assertTrue(sejong['whole'])
+        self.assertEqual(sejong['wide_orgs'], [])
+        self.assertEqual([o['name'] for o in m['units']['36110']['orgs']], ['세종특별자치시'])
 
     def test_national_equals_sum_of_sido(self):
         recs = [rec('천안시', CHEONAN, contracts=[k(*S)]), rec('아산시', ASAN, contracts=[k(*S)]),

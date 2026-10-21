@@ -96,8 +96,19 @@ def guess_location(name, category, region):
                          f'인천 개편(2026-07): 예전 {old} → {new} 중 선택 필요')
         return Guess(_sido_location(sido), FACILITY, f'{sname} 소속 시설·공기업(시·도 단위)')
 
+    # 1-1) 제주 행정시(제주시·서귀포시)는 기초자치단체가 아니다. 상위기관은 제주특별자치도이고,
+    #      제주 면은 도 기관으로만 칠하므로 시설·공기업으로 둔다(리뷰 40)
+    for city in ('제주시', '서귀포시'):
+        if text.startswith(city):
+            return Guess('50000', FACILITY, f'제주 행정시({city}) 소속: 상위기관 제주특별자치도')
+
     # 2) 면 이름으로 시작하는 경우 (권역으로 같은 이름 구분)
     codes, tail = _match_unit(text, region_sidos)
+    if not codes and region_sidos is not None:
+        any_codes, any_tail = _match_unit(text, None)
+        # 제주는 권역 대응표가 아직 없다([확인 필요]). 제주에만 있는 이름이면 권역과 상관없이 받아들인다
+        if len(any_codes) == 1 and aa.UNIT_BY_CODE[any_codes[0]][1] == '50':
+            codes, tail = any_codes, any_tail
     if not codes and region_sidos is not None:
         any_codes, _ = _match_unit(text, None)
         if any_codes:

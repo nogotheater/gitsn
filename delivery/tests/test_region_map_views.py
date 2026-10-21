@@ -35,3 +35,31 @@ class RegionMapAccessScenarios(TestCase):
         self.assertContains(self.client.get('/performance/'), 'href="/performance/map/"')
         self.client.force_login(self.user('rm-partner-2', 'partner'))
         self.assertNotContains(self.client.get('/performance/'), 'href="/performance/map/"')
+
+
+    def test_database_error_shows_a_notice_with_503(self):
+        from unittest import mock
+        from django.db import DatabaseError
+        self.client.force_login(self.user('rm-employee-3', 'employee'))
+        with mock.patch('delivery.services.region_map.region_map_payload', side_effect=DatabaseError('down')):
+            r = self.client.get('/performance/map/')
+        self.assertEqual(r.status_code, 503)
+        self.assertContains(r, '새로고침해 주십시오', status_code=503)
+        self.assertNotContains(r, 'id="rmap-data"', status_code=503)
+
+    def test_unassigned_list_only_for_managers(self):
+        from django.contrib.auth.models import Permission
+        from delivery.models import Category, Contract, ContractProduct, Customer, Organization, Product, Region
+        p = Product.objects.create(code='rmv-s', name='Alpha-S', marker='S')
+        cu = Customer.objects.create(organization=Organization.objects.create(official_name='소재지 없는 군청'),
+                                     category=Category.LOCAL, region=Region.CHUNGCHEONG, partner_public=True)
+        k = Contract.objects.create(customer=cu, contracting_party=cu.organization, is_active=True)
+        ContractProduct.objects.create(contract=k, product=p, quantity=1)
+        self.client.force_login(self.user('rm-employee-4', 'employee'))
+        combos = self.client.get('/performance/map/').context['payload']['combos']
+        self.assertEqual([c['unassigned'] for c in combos.values()], [[]] * 4)
+        m = self.user('rm-manager-4', 'employee')
+        m.user_permissions.add(Permission.objects.get(codename='manage_delivery', content_type__app_label='delivery'))
+        self.client.force_login(m)
+        combos = self.client.get('/performance/map/').context['payload']['combos']
+        self.assertEqual([o['name'] for o in combos['eavesdrop:local']['unassigned']], ['소재지 없는 군청'])
