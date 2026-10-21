@@ -13,6 +13,11 @@
   var head = root.querySelector('[data-rmap-panel-head]');
   var summary = root.querySelector('[data-rmap-summary]');
   var body = root.querySelector('[data-rmap-panel-body]');
+  var stage = root.querySelector('[data-rmap-stage]');
+  var tip = root.querySelector('[data-rmap-tip]');
+  var card = root.querySelector('[data-rmap-card]');
+  var legendFac = root.querySelector('[data-rmap-legend-fac]');
+  var facLayer = null, centers = {};
   var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var geo = null, svg = null, viewBox = null, sidoBox = {}, detailLoaded = {}, anim = null;
 
@@ -120,13 +125,25 @@
     } else {
       w.appendChild(el('span', { 'class': 'is-none' }, '미도입'));
     }
+    s.wide_facilities.forEach(function (o) {
+      var f = el('span', { 'data-org': o.id, 'data-fac': '' });
+      f.appendChild(el('span', { 'class': 'rmap-fac-dot', 'aria-hidden': 'true' }));
+      f.appendChild(document.createTextNode(' ' + o.name));
+      w.appendChild(f);
+    });
     wide.appendChild(w);
     body.appendChild(wide);
 
     var miss = section('빠진 곳', s.missing.length);
     if (s.missing.length) {
       var ul = el('ul', { 'class': 'rmap-missing', 'data-rmap-missing': '' });
-      s.missing.forEach(function (code) { ul.appendChild(el('li', { 'data-unit': code }, data.units[code].name)); });
+      s.missing.forEach(function (code) {
+        var li = el('li', { 'data-unit': code }, data.units[code].name);
+        if (c.units[code] && c.units[code].facilities.length) {
+          li.appendChild(el('span', { 'class': 'rmap-fac-dot', title: '시설·공기업 도입 있음', 'data-fac': '' }));
+        }
+        ul.appendChild(li);
+      });
       miss.appendChild(ul);
     } else {
       miss.appendChild(el('p', { 'class': 'rmap-empty-note' }, '빠진 곳이 없습니다.'));
@@ -157,9 +174,108 @@
     svg.querySelectorAll('.rmap-sido').forEach(function (p) {
       p.classList.toggle('is-selected', p.dataset.code === state.sido);
     });
+    drawMarkers();
   }
 
+  /* ---------- 시설·공기업 표시 ---------- */
+  function center(code) {
+    if (!centers[code]) {
+      var p = svg.querySelector('.rmap-unit[data-code="' + code + '"]');
+      var b = p.getBBox();
+      centers[code] = [b.x + b.width / 2, b.y + b.height / 2];
+    }
+    return centers[code];
+  }
+  function markerRadius() { return Math.max(viewBox[2], viewBox[3]) / 150; }
+  function drawMarkers() {
+    var c = combo();
+    var any = c.sido.some(function (s) { return s.wide_facilities.length; });
+    facLayer.textContent = '';
+    Object.keys(c.units).forEach(function (code) {
+      if (!c.units[code].facilities.length) return;
+      any = true;
+      var xy = center(code);
+      var m = document.createElementNS(SVG, 'circle');
+      m.setAttribute('cx', xy[0]); m.setAttribute('cy', xy[1]); m.setAttribute('r', markerRadius());
+      m.setAttribute('class', 'rmap-fac' + (state.sido && data.units[code].sido !== state.sido ? ' is-dim' : ''));
+      m.dataset.code = code;
+      facLayer.appendChild(m);
+    });
+    legendFac.hidden = !any;
+  }
+
+  /* ---------- 말풍선(마우스) ---------- */
+  function place(box, x, y, w, h) {
+    var r = stage.getBoundingClientRect();
+    var left = x - r.left + 14, top = y - r.top + 14;
+    var maxX = r.width - w - 8, maxY = r.height - h - 8;
+    if (left > maxX) left = x - r.left - w - 14;
+    if (top > maxY) top = y - r.top - h - 14;
+    box.style.left = Math.max(8, left) + 'px';
+    box.style.top = Math.max(8, top) + 'px';
+  }
+  function showTip(code, x, y) {
+    var c = combo(), slot = c.units[code], u = data.units[code];
+    var isIn = !!(slot && slot.state === 'in');
+    tip.textContent = '';
+    tip.appendChild(el('strong', {}, u.name));
+    tip.appendChild(el('span', { 'class': isIn ? 'is-in' : 'is-out' }, isIn ? '도입' : '미도입'));
+    if (slot && slot.facilities.length) tip.appendChild(el('span', { 'class': 'is-out' }, ' · 시설·공기업 ' + slot.facilities.length + '곳'));
+    tip.hidden = false;
+    tip.dataset.unit = code;
+    place(tip, x, y, tip.offsetWidth, tip.offsetHeight);
+  }
+  function hideTip() { tip.hidden = true; tip.dataset.unit = ''; }
+
+  /* ---------- 기관 카드 ---------- */
+  function cardOrg(org) {
+    var box = el('div', { 'class': 'rmap-card-org', 'data-org': org.id });
+    box.appendChild(symbol(org));
+    var t = el('div');
+    t.appendChild(el('p', { 'class': 'rmap-card-name', 'data-field': 'name' }, org.name));
+    t.appendChild(el('p', { 'class': 'rmap-card-family', 'data-field': 'family' }, label(data.families, state.family)));
+    box.appendChild(t);
+    var cells = el('dl', { 'class': 'rmap-card-cells' });
+    var a = el('div'); a.appendChild(el('dt', {}, '제품')); a.appendChild(el('dd', { 'data-field': 'products' }, org.products));
+    var b = el('div'); b.appendChild(el('dt', {}, '도입 연도')); b.appendChild(el('dd', { 'data-field': 'year' }, org.year));
+    cells.appendChild(a); cells.appendChild(b);
+    box.appendChild(cells);
+    return box;
+  }
+  function openCard(code, x, y) {
+    hideTip();
+    var c = combo(), slot = c.units[code] || { state: 'out', orgs: [], facilities: [] }, u = data.units[code];
+    card.textContent = '';
+    var close = el('button', { type: 'button', 'class': 'rmap-card-close', 'aria-label': '닫기', 'data-rmap-card-close': '' }, '×');
+    close.addEventListener('click', closeCard);
+    card.appendChild(close);
+    if (slot.state === 'in') {
+      card.appendChild(el('p', { 'class': 'rmap-card-unit' }, data.sido.filter(function (s) { return s.code === u.sido; })[0].short + ' ' + u.name));
+      slot.orgs.forEach(function (o) { card.appendChild(cardOrg(o)); });
+    } else {
+      var out = el('p', { 'class': 'rmap-card-out', 'data-field': 'name' }, u.name);
+      out.appendChild(el('span', { 'data-field': 'status' }, '미도입'));
+      card.appendChild(out);
+    }
+    if (slot.facilities.length) {
+      var fac = el('div', { 'class': 'rmap-card-fac', 'data-rmap-card-fac': '' });
+      var ft = el('p', { 'class': 'rmap-card-fac-title' });
+      ft.appendChild(el('span', { 'class': 'rmap-fac-dot', 'aria-hidden': 'true' }));
+      ft.appendChild(document.createTextNode('시설·공기업 도입'));
+      fac.appendChild(ft);
+      slot.facilities.forEach(function (o) { fac.appendChild(cardOrg(o)); });
+      card.appendChild(fac);
+    }
+    card.hidden = false;
+    card.dataset.unit = code;
+    place(card, x, y, card.offsetWidth, card.offsetHeight);
+    close.focus({ preventScroll: true });
+  }
+  function closeCard() { card.hidden = true; card.dataset.unit = ''; }
+
   function update() {
+    closeCard();
+    hideTip();
     renderSwitches();
     if (state.sido) { renderSido(); } else { renderNational(); }
     paint();
@@ -168,7 +284,11 @@
   }
 
   /* ---------- 확대 ---------- */
-  function setViewBox(vb) { viewBox = vb; svg.setAttribute('viewBox', vb.map(function (n) { return n.toFixed(1); }).join(' ')); }
+  function setViewBox(vb) {
+    viewBox = vb;
+    svg.setAttribute('viewBox', vb.map(function (n) { return n.toFixed(1); }).join(' '));
+    if (facLayer) { var r = markerRadius(); facLayer.querySelectorAll('circle').forEach(function (m) { m.setAttribute('r', r); }); }
+  }
   function targetBox(code) {
     if (!code) return geo.viewBox.slice();
     var b = sidoBox[code];
@@ -197,7 +317,9 @@
         d.units.forEach(function (u) {
           var p = svg.querySelector('.rmap-unit[data-code="' + u.code + '"]');
           if (p) p.setAttribute('d', u.d);
+          delete centers[u.code];
         });
+        drawMarkers();
         var o = svg.querySelector('.rmap-sido[data-code="' + code + '"]');
         if (o) o.setAttribute('d', d.outline);
         root.dataset.detail = (root.dataset.detail ? root.dataset.detail + ',' : '') + code;
@@ -234,20 +356,44 @@
       p.dataset.code = s.code;
       sido.appendChild(p);
     });
+    facLayer = document.createElementNS(SVG, 'g');
+    facLayer.setAttribute('class', 'rmap-facs');
     svg.appendChild(units);
     svg.appendChild(sido);
-    units.addEventListener('click', function (ev) {
-      var p = ev.target.closest('.rmap-unit');
-      if (!p) return;
-      if (state.sido !== p.dataset.sido) selectSido(p.dataset.sido);
+    svg.appendChild(facLayer);
+    function codeOf(target) {
+      var n = target.closest('.rmap-unit, .rmap-fac');
+      return n ? n.dataset.code : null;
+    }
+    svg.addEventListener('click', function (ev) {
+      var code = codeOf(ev.target);
+      if (!code) { closeCard(); return; }
+      var sidoCode = data.units[code].sido;
+      if (state.sido !== sidoCode) { selectSido(sidoCode); return; }
+      openCard(code, ev.clientX, ev.clientY);
     });
+    svg.addEventListener('pointermove', function (ev) {
+      if (ev.pointerType !== 'mouse') return;
+      var code = codeOf(ev.target);
+      if (!code) { hideTip(); return; }
+      showTip(code, ev.clientX, ev.clientY);
+    });
+    svg.addEventListener('pointerleave', hideTip);
     canvas.appendChild(svg);
     setViewBox(targetBox(state.sido));
     paint();
     root.dataset.ready = '1';
   }
 
-  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && state.sido) selectSido(null); });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Escape') return;
+    if (!card.hidden) { closeCard(); return; }   // 카드가 열려 있으면 카드만 닫는다
+    if (state.sido) selectSido(null);
+  });
+  document.addEventListener('pointerdown', function (ev) {
+    if (card.hidden || card.contains(ev.target) || (svg && svg.contains(ev.target))) return;
+    closeCard();
+  });
 
   update();
   fetch(root.dataset.mapUrl, { credentials: 'same-origin' })

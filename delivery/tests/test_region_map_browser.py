@@ -25,7 +25,9 @@ class RegionMapBrowserScenarios(StaticLiveServerTestCase):
                                               ('천안시의회', Category.COUNCIL, '44130', 'admin', s),
                                               ('충청남도', Category.LOCAL, '44', 'admin', s),
                                               ('전남광주통합특별시 광주청사', Category.LOCAL, '12', 'admin', s),
-                                              ('전남광주통합특별시 무안청사', Category.LOCAL, '12', 'admin', s)]:
+                                              ('전남광주통합특별시 무안청사', Category.LOCAL, '12', 'admin', s),
+                                              ('공주 어떤 시설', Category.LOCAL, '44150', 'facility', c),
+                                              ('충청남도 산림자원연구소', Category.LOCAL, '44', 'facility', c)]:
             cu = Customer.objects.create(organization=Organization.objects.create(official_name=name), category=cat,
                                          region=Region.CHUNGCHEONG, partner_public=True, location_code=loc, institution_type=kind)
             k = Contract.objects.create(customer=cu, contracting_party=cu.organization, is_active=True, contract_date=date(2021, 1, 1))
@@ -152,5 +154,63 @@ class RegionMapBrowserScenarios(StaticLiveServerTestCase):
                 # 지도 면을 눌러도 그 시·도로 간다
                 page.locator('.rmap-unit[data-code="44130"]').click(force=True)
                 expect(root).to_have_attribute('data-sido', '44')
+            finally:
+                browser.close()
+
+
+    @staticmethod
+    def click_unit(page, selector):
+        """SVG 면의 테두리 상자 가운데가 이웃 면일 수 있으므로, 그 요소에 직접 클릭 이벤트를 보낸다."""
+        page.eval_on_selector(selector, """el => { const r = el.getBoundingClientRect();
+            el.dispatchEvent(new MouseEvent('click', {bubbles: true, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2})); }""")
+
+    def test_tooltip_card_and_facility_marks(self):
+        with sync_playwright() as engine:
+            browser = engine.chromium.launch()
+            try:
+                page = browser.new_page(viewport={'width': 1440, 'height': 900})
+                self.open_map(page)
+                root = page.locator('[data-rmap]')
+                tip = page.locator('[data-rmap-tip]')
+                card = page.locator('[data-rmap-card]')
+                # 마우스를 올리면 이름과 도입 여부
+                page.eval_on_selector('.rmap-unit[data-code="44130"]', """el => { const r = el.getBoundingClientRect();
+                    el.dispatchEvent(new PointerEvent('pointermove', {bubbles: true, pointerType: 'mouse', clientX: r.x + r.width / 2, clientY: r.y + r.height / 2})); }""")
+                expect(tip).to_be_visible()
+                expect(tip).to_contain_text('천안시')
+                expect(tip).to_contain_text('도입')
+                # 시·도를 고른 뒤 도입 면을 누르면 카드: 정보 네 가지(심볼·이름·제품·연도) + 제품군 이름
+                page.locator('.rmap-sido-row[data-sido="44"]').click()
+                expect(root).to_have_attribute('data-sido', '44')
+                self.click_unit(page, '.rmap-unit[data-code="44130"]')
+                expect(card).to_be_visible()
+                fields = page.eval_on_selector_all('[data-rmap-card] [data-field]', 'els => els.map(e => [e.dataset.field, e.textContent])')
+                self.assertEqual(fields, [['name', '천안시'], ['family', '도청 보안'], ['products', 'Alpha-S'], ['year', '2021']])
+                expect(page.locator('[data-rmap-card] .rmap-symbol')).to_have_text('천')  # 심볼이 없으면 글자 타일
+                text = card.inner_text()
+                for unexpected in ('대', '수량', '금액', '연락처'):
+                    self.assertNotIn(unexpected, text.replace('도입 연도', '').replace('도청', ''))
+                # Esc는 카드만 닫고 시·도는 유지
+                page.keyboard.press('Escape')
+                expect(card).to_be_hidden()
+                expect(root).to_have_attribute('data-sido', '44')
+                # 미도입 면은 이름과 '미도입'만
+                self.click_unit(page, '.rmap-unit[data-code="44210"]')
+                fields = page.eval_on_selector_all('[data-rmap-card] [data-field]', 'els => els.map(e => [e.dataset.field, e.textContent])')
+                self.assertEqual([f[0] for f in fields], ['name', 'status'])
+                expect(page.locator('[data-rmap-card] [data-field="status"]')).to_have_text('미도입')
+                # 시설 표시는 제품군을 따라간다
+                expect(page.locator('.rmap-fac')).to_have_count(0)
+                expect(page.locator('[data-rmap-legend-fac]')).to_be_hidden()
+                page.locator('[data-rmap-switch="family"] button[data-value="camera"]').click()
+                expect(page.locator('.rmap-fac')).to_have_count(1)
+                expect(page.locator('.rmap-fac')).to_have_attribute('data-code', '44150')
+                expect(page.locator('[data-rmap-legend-fac]')).to_be_visible()
+                expect(page.locator('[data-rmap-missing] li[data-unit="44150"] [data-fac]')).to_have_count(1)
+                expect(page.locator('[data-rmap-wide] [data-fac]')).to_contain_text('충청남도 산림자원연구소')
+                # 시설 표시를 누르면 카드에 시설·공기업 칸
+                self.click_unit(page, '.rmap-fac[data-code="44150"]')
+                expect(page.locator('[data-rmap-card-fac]')).to_contain_text('공주 어떤 시설')
+                expect(page.locator('[data-rmap-card] [data-field="status"]')).to_have_text('미도입')
             finally:
                 browser.close()

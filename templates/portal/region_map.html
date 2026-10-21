@@ -5,6 +5,8 @@
 <section class="rmap" data-rmap data-map-url="{% versioned_static 'delivery/map/korea-lite.json' %}" data-sido-base="{% static 'delivery/map/sido/' %}" aria-labelledby="rmap-title">
   <div class="rmap-stage" data-rmap-stage>
     <div class="rmap-canvas" data-rmap-canvas></div>
+    <div class="rmap-tip" data-rmap-tip role="tooltip" hidden></div>
+    <div class="rmap-card" data-rmap-card role="dialog" aria-modal="false" aria-label="기관 정보" hidden></div>
     <p class="rmap-error" data-rmap-error role="alert" hidden>지도 경계 파일을 불러오지 못했습니다. 새로고침해 주세요. 계속 안 되면 기획팀에 알려 주세요.</p>
 
     <header class="rmap-bar">
@@ -19,6 +21,7 @@
       <ul class="rmap-legend" aria-label="범례">
         <li><span class="rmap-swatch is-in" aria-hidden="true"></span>도입</li>
         <li><span class="rmap-swatch" aria-hidden="true"></span>미도입</li>
+        <li data-rmap-legend-fac hidden><span class="rmap-fac-dot" aria-hidden="true"></span>시설·공기업 도입</li>
       </ul>
     </header>
 
