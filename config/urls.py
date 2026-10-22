@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import index, live, ready
+from .views import index, live, ready, service_worker
 from django.contrib.auth.views import LogoutView
 from django.views.generic import RedirectView
 from delivery import planning_views as planning
@@ -39,6 +39,7 @@ urlpatterns = [
     path("planning/products/new/", planning.product_add, name="planning-product-add"),
     path("planning/products/<uuid:product_id>/edit/", planning.product_add, name="planning-product-edit"),
     path("planning/products/<uuid:product_id>/delete/", planning.product_delete, name="planning-product-delete"),
+    path("sw.js", service_worker, name="service-worker"),
     path("health/live/", live, name="health-live"),
     path("health/ready/", ready, name="health-ready"),
 ]

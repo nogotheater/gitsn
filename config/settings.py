@@ -21,8 +21,9 @@ def env_bool(name, default=False):
     return raw in {"true", "1"}
 
 SECRET_KEY = required("DJANGO_SECRET_KEY")
-if len(SECRET_KEY) < 50:
-    raise ImproperlyConfigured("DJANGO_SECRET_KEY must contain at least 50 characters.")
+# 40자 이상(Render가 만들어 주는 256비트 base64 값이 44자, 2026-10-22). PC는 bootstrap_env.py가 86자를 만든다.
+if len(SECRET_KEY) < 40:
+    raise ImproperlyConfigured("DJANGO_SECRET_KEY must contain at least 40 characters.")
 DEBUG = env_bool("DJANGO_DEBUG", False)
 ALLOWED_HOSTS = [x.strip() for x in required("DJANGO_ALLOWED_HOSTS").split(",") if x.strip()]
 if "*" in ALLOWED_HOSTS:
@@ -93,3 +94,33 @@ SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
 X_FRAME_OPTIONS = "DENY"
 SECURE_CONTENT_TYPE_NOSNIFF = True
+
+# 인터넷 테스트 서버(Render + Supabase, 2026-10-22 형우). 아래 값은 서버 환경에서만 켜진다 — PC 실행에는 영향 없음.
+CSRF_TRUSTED_ORIGINS = [x.strip() for x in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") if x.strip()]
+_render_host = os.environ.get("RENDER_EXTERNAL_HOSTNAME", "").strip()   # Render가 자동으로 넣어 주는 주소(○○.onrender.com)
+if _render_host:
+    ALLOWED_HOSTS.append(_render_host)
+    CSRF_TRUSTED_ORIGINS.append("https://" + _render_host)
+if env_bool("DJANGO_BEHIND_PROXY", False):   # 앞단(Render)이 https를 맡는다
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+if env_bool("DJANGO_SERVE_STATIC", False):   # 정적 파일(CSS·JS·아이콘)은 WhiteNoise가 낸다
+    MIDDLEWARE.insert(1, "whitenoise.middleware.WhiteNoiseMiddleware")
+if os.environ.get("POSTGRES_SSLMODE", "").strip():   # Supabase는 암호화 연결만 받는다
+    DATABASES["default"]["OPTIONS"]["sslmode"] = os.environ["POSTGRES_SSLMODE"].strip()
+if os.environ.get("MEDIA_S3_BUCKET", "").strip():
+    # 로고 파일은 Supabase 저장소(S3 방식, 비공개 버킷)에 둔다. 화면에는 지금처럼 로그인한 사람에게만 서버가 내려준다.
+    STORAGES = {
+        "default": {"BACKEND": "storages.backends.s3.S3Storage", "OPTIONS": {
+            "bucket_name": required("MEDIA_S3_BUCKET"),
+            "endpoint_url": required("MEDIA_S3_ENDPOINT"),
+            "access_key": required("MEDIA_S3_ACCESS_KEY"),
+            "secret_key": required("MEDIA_S3_SECRET_KEY"),
+            "region_name": os.environ.get("MEDIA_S3_REGION", "ap-southeast-1"),
+            "addressing_style": "path",
+            "signature_version": "s3v4",
+            "default_acl": None,
+            "querystring_auth": True,
+            "file_overwrite": False,
+        }},
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    }

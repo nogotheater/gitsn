@@ -1,0 +1,47 @@
+# 인터넷 테스트 서버(Render, 무료, 싱가포르) — 2026-10-22 형우. 사용성 확인 후 사내 서버로 옮긴다.
+# 비밀 값(sync: false)은 Render 화면에서 직접 넣는다. 저장소(GitHub)에는 비밀 값이 없다.
+services:
+  - type: web
+    name: gitsn
+    runtime: docker
+    region: singapore
+    plan: free
+    dockerCommand: python scripts/start_prod.py
+    autoDeploy: true
+    envVars:
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_DEBUG
+        value: "false"
+      - key: DJANGO_ALLOWED_HOSTS
+        value: localhost
+      - key: DJANGO_BEHIND_PROXY
+        value: "true"
+      - key: DJANGO_SERVE_STATIC
+        value: "true"
+      - key: WEB_CONCURRENCY
+        value: "2"
+      # Supabase DB(세션 풀러, 암호화)
+      - key: POSTGRES_HOST
+        sync: false
+      - key: POSTGRES_PORT
+        value: "5432"
+      - key: POSTGRES_DB
+        value: postgres
+      - key: POSTGRES_USER
+        sync: false
+      - key: POSTGRES_PASSWORD
+        sync: false
+      - key: POSTGRES_SSLMODE
+        value: require
+      # Supabase 저장소(로고, 비공개 버킷)
+      - key: MEDIA_S3_ENDPOINT
+        sync: false
+      - key: MEDIA_S3_REGION
+        value: ap-southeast-1
+      - key: MEDIA_S3_BUCKET
+        value: logos
+      - key: MEDIA_S3_ACCESS_KEY
+        sync: false
+      - key: MEDIA_S3_SECRET_KEY
+        sync: false

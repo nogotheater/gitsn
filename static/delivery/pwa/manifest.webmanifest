@@ -1,0 +1,16 @@
+{
+  "name": "GITSN 납품현황",
+  "short_name": "GITSN 고객사",
+  "description": "지슨 고객사 납품현황",
+  "lang": "ko",
+  "start_url": "/performance/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F2F5F8",
+  "theme_color": "#0474D4",
+  "icons": [
+    {"src": "/static/delivery/pwa/icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "/static/delivery/pwa/icon-512.png", "sizes": "512x512", "type": "image/png"},
+    {"src": "/static/delivery/pwa/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}
