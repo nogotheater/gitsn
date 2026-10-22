@@ -127,10 +127,10 @@
   }
   function currentView() { return viewRoot && viewRoot.classList.contains('view-list') ? 'list' : 'card'; }
   let ticket = 0;
-  async function live(url, { push = true, focusKey = null } = {}) {
+  async function live(url, { push = true, focusKey = null, keepList = false } = {}) {
     const mine = ++ticket;
     const list = root.querySelector('[data-view-root]');
-    if (list) list.setAttribute('aria-busy', 'true');
+    if (list && !keepList) list.setAttribute('aria-busy', 'true');
     let fresh;
     try {
       const response = await fetch(url, { credentials: 'same-origin', headers: { Accept: 'text/html' } });
@@ -143,7 +143,12 @@
     const oldRegions = Array.from(root.querySelectorAll('[data-live-region]'));
     const newRegions = new Map(Array.from(fresh.querySelectorAll('[data-live-region]'), el => [el.dataset.liveRegion, el]));
     if (oldRegions.length !== newRegions.size || oldRegions.some(el => !newRegions.has(el.dataset.liveRegion))) { window.location.href = url; return; }
-    oldRegions.forEach(el => el.replaceWith(document.importNode(newRegions.get(el.dataset.liveRegion), true)));
+    // keepList: 목록은 이미 그 자리에서 바꿨다(분류 칩 즉시 전환) — 나머지(주소가 든 링크·숨은 칸 등)만 서버 것으로 맞춘다
+    oldRegions.forEach(el => {
+      if (keepList && (el.dataset.liveRegion === 'list' || el.dataset.liveRegion === 'pages')) return;
+      el.replaceWith(document.importNode(newRegions.get(el.dataset.liveRegion), true));
+    });
+    if (!keepList) primeFull(url, fresh);
     viewRoot = root.querySelector('[data-view-root]');
     setView(view, false);
     // 바꾸지 않고 값만 맞추는 곳: 폰 필터 시트의 제품 체크(이벤트가 걸려 있다), 검색창 글자
@@ -163,7 +168,114 @@
     const again = focusKey && root.querySelector(`[data-live-key="${focusKey}"]`);
     if (again) again.focus({ preventScroll: true });
   }
+  // 분류 칩은 누르는 즉시(2026-10-22 형우: '중앙정부→공공기관 누르면 1~2초 뒤에 바뀐다').
+  // 같은 제품·검색 조건의 '전체 목록'을 한 벌 들고 있다가 그 안에서 고른 분류만 남긴다. 서버 확인은 뒤에서 조용히.
+  const fullReady = new Map();   // 제품·검색 조건 → { list, total }
+  const fullPending = new Set();
+  function baseParams(url) {
+    const u = new URL(url, window.location.href);
+    const p = new URLSearchParams();
+    u.searchParams.getAll('products').forEach(v => p.append('products', v));
+    if (u.searchParams.get('q')) p.set('q', u.searchParams.get('q'));
+    return { path: u.pathname, params: p };
+  }
+  function baseKey(url) { const b = baseParams(url); return b.path + '?' + b.params.toString(); }
+  function categoryUrl(url, codes) {
+    const { path, params } = baseParams(url);
+    const p = new URLSearchParams();
+    params.getAll('products').forEach(v => p.append('products', v));
+    codes.forEach(c => p.append('category', c));
+    if (params.get('q')) p.set('q', params.get('q'));
+    const qs = p.toString();
+    return qs ? `${path}?${qs}` : path;
+  }
+  function storeFull(key, list, total) {
+    const copy = list.cloneNode(true);
+    copy.removeAttribute('aria-busy');
+    copy.querySelectorAll('.is-cut').forEach(card => card.classList.remove('is-cut'));
+    copy.querySelectorAll('.performance-category').forEach(s => { delete s.dataset.rowsCard; delete s.dataset.rowsList; });
+    fullReady.set(key, { list: copy, total });
+    if (fullReady.size > 6) fullReady.delete(fullReady.keys().next().value);
+  }
+  // 지금 화면이 분류 없이 본 전체 목록이면 그대로 담고, 분류를 고른 화면이면 전체 목록을 뒤에서 한 번 받아 둔다.
+  function primeFull(url, doc) {
+    const key = baseKey(url);
+    if (fullReady.has(key) || fullPending.has(key)) return;
+    const src = doc || root;
+    if (!new URL(url, window.location.href).searchParams.getAll('category').length) {
+      const list = src.querySelector('[data-live-region="list"]');
+      const total = src.querySelector('[data-testid="total-count"]');
+      if (list) storeFull(key, list, total ? total.textContent.trim() : '');
+      return;
+    }
+    fullPending.add(key);
+    const go = () => fetch(categoryUrl(url, []), { credentials: 'same-origin', headers: { Accept: 'text/html' } })
+      .then(r => r.ok ? r.text() : Promise.reject(r.status))
+      .then(html => {
+        const page = new DOMParser().parseFromString(html, 'text/html');
+        const list = page.querySelector('[data-performance-page] [data-live-region="list"]');
+        const total = page.querySelector('[data-testid="total-count"]');
+        if (list) storeFull(key, list, total ? total.textContent.trim() : '');
+      })
+      .catch(() => {})
+      .finally(() => fullPending.delete(key));
+    if ('requestIdleCallback' in window) requestIdleCallback(go, { timeout: 1500 }); else setTimeout(go, 300);
+  }
+  function quickCategory(chip) {
+    const nav = root.querySelector('[data-category-chips]');
+    const url = chip.href;   // 아래에서 칩 주소를 다음 상태로 바꾸므로 누른 순간의 주소를 먼저 잡아 둔다
+    const full = fullReady.get(baseKey(url));
+    if (!nav || !full) return false;
+    const chosen = new URL(url, window.location.href).searchParams.getAll('category');
+    const list = full.list.cloneNode(true);
+    if (chosen.length) {
+      list.querySelectorAll('.performance-category').forEach(section => {
+        if (!chosen.includes(section.dataset.category)) { section.remove(); return; }
+        // 분류를 고르면 다 펼친다(서버와 같게: 접기 버튼·더 보기 줄 없음)
+        section.classList.remove('is-collapsible');
+        section.querySelectorAll('.section-fold, [data-more-row]').forEach(node => node.remove());
+      });
+    }
+    if (!list.querySelector('.performance-category')) return false;   // 빈 화면 문구는 서버가 그린다
+    const view = currentView();
+    root.querySelector('[data-view-root]').replaceWith(list);
+    viewRoot = list;
+    setView(view, false);
+    // 칩 모양·다음에 누를 주소·총 개수를 바로 맞춘다
+    const chips = Array.from(nav.querySelectorAll('[data-category]'));
+    const order = chips.map(c => c.dataset.category);
+    let sum = 0;
+    nav.querySelectorAll('a[data-category]').forEach(c => {
+      const code = c.dataset.category;
+      const on = chosen.includes(code);
+      c.classList.toggle('is-active', on);
+      c.classList.toggle('is-dim', !on && chosen.length > 0);
+      if (on) { c.setAttribute('aria-current', 'true'); c.title = '다시 누르면 선택 해제'; } else { c.removeAttribute('aria-current'); c.removeAttribute('title'); }
+      const next = order.filter(v => (chosen.includes(v)) !== (v === code));
+      c.href = categoryUrl(url, next);
+      if (on) sum += parseInt((c.querySelector('strong') || {}).textContent, 10) || 0;
+    });
+    const total = root.querySelector('[data-testid="total-count"]');
+    if (total) total.textContent = chosen.length ? String(sum) : full.total;
+    const bandCount = root.querySelector('[data-category-band] .band-count');
+    if (bandCount && total) bandCount.textContent = `${total.textContent}곳`;
+    history.replaceState({ performanceLive: true }, '', url);
+    syncMore();
+    syncBand();
+    const focusKey = chip.dataset.liveKey || null;
+    const again = focusKey && root.querySelector(`[data-live-key="${focusKey}"]`);
+    if (again) again.focus({ preventScroll: true });
+    live(url, { push: false, focusKey, keepList: true });
+    return true;
+  }
   root.addEventListener('click', event => {
+    const modified = event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button;
+    const chip = event.target.closest('[data-category-chips] a[data-category]');
+    if (chip && !modified) {
+      event.preventDefault();
+      if (!quickCategory(chip)) live(chip.href, { focusKey: chip.dataset.liveKey || null });
+      return;
+    }
     // 분류 칸·제품 칩·조건 해제 칩·모두 해제: 새로고침 없이 바꾼다(새 탭 열기 등 보조키 클릭은 그대로)
     const link = event.target.closest('a[data-live]');
     if (link && !(event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button)) {
@@ -476,6 +588,7 @@
   }
   let moreTimer = null;
   window.addEventListener('resize', () => { clearTimeout(moreTimer); moreTimer = setTimeout(syncMore, 120); });
+  primeFull(window.location.href);
   syncMore();
   window.addEventListener('popstate', () => live(window.location.href, { push: false }));
   watchBand();

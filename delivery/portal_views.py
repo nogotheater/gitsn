@@ -10,12 +10,14 @@ from django.core.paginator import Paginator
 from django.db import DatabaseError
 from django.http import FileResponse, Http404, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.views.decorators.cache import never_cache
 from django.utils.cache import add_never_cache_headers, patch_cache_control
 from django.views.decorators.http import require_GET, require_http_methods
 from .services.list_order import item_order_key
 from .services.logo_cache import logo_bytes
 from .domain.products import product_sort_key
+from .templatetags.delivery_display import badge_color
 from .models import Category, Region, DisplayKind, Customer, Contract, SitePresentation, Product
 from .portal_forms import DeliveryAuthenticationForm, PerformanceFilterForm, AccountCreateForm, AccountEditForm, AccountPasswordForm
 from .planning_views import planning_only, attach_errors
@@ -90,13 +92,21 @@ def performance(request):
     # 분류 → (지자체·의회는) 권역 → 이름 순(C2). 중앙정부·민간·지자체는 정한 순서(services/list_order, 2026-10-22 형우).
     order = item_order_key(payload['items'])
     items = sorted(payload['items'], key=lambda row: (*section_rank(row['category'], row['region']), *order(row), row['kind'], row['id']))
+    # 카드 주소·로고 주소·마킹 색은 여기서 한 번에 만든다 — 504장을 그릴 때 템플릿이 매번 계산하지 않게(2026-10-22, 속도)
+    zero = '00000000-0000-0000-0000-000000000000'
+    detail_base = {'customer': reverse('employee-customer', args=[zero]), 'site': reverse('employee-site', args=[zero])}
+    logo_base = {kind: reverse('performance-logo', args=[kind, zero]) for kind in detail_base}
     for item in items:
+        item['detail_url'] = detail_base[item['kind']].replace(zero, item['id'])
+        item['logo_url'] = logo_base[item['kind']].replace(zero, item['id']) if item['has_logo'] else ''
+        item['initial'] = item['name'][:1]
         item['category_label'] = Category(item['category']).label
         item['region_label'] = Region(item['region']).label if item['region'] else ''
         item['display_label'] = DisplayKind(item['display_as']).label
         for product in item['products']:
             product['emphasized'] = bool(selected_ids) and product['id'] in selected_ids
             product['subdued'] = bool(selected_ids) and product['id'] not in selected_ids
+            product['badge'] = badge_color(product['color'])
         item['products'] = sorted(item['products'], key=lambda p: (p['subdued'], *product_sort_key(p['marker'], p['name'], p['id'])))
     # The name search only narrows what is listed; counts, sections and printing ignore it.
     if search:

@@ -116,6 +116,48 @@ class PortalBrowserScenarios(StaticLiveServerTestCase):
             finally:
                 browser.close()
 
+    def test_category_chip_switches_list_at_once_then_matches_server(self):
+        # 2026-10-22 형우: '중앙정부 눌렀다가 공공기관 누르면 1~2초 뒤에 바뀐다' → 칩을 누르는 그 순간 목록이 바뀌어야 한다.
+        customer = Customer.objects.create(organization=Organization.objects.create(official_name='브라우저 중앙 기관'), category='central', partner_public=True)
+        contract = Contract.objects.create(customer=customer, contracting_party=customer.organization, is_active=True)
+        ContractProduct.objects.create(contract=contract, product=self.c, quantity=1)
+        click_now = """code => {
+            document.querySelector(`[data-category-chips] a[data-category="${code}"]`).click();
+            const sections = [...document.querySelectorAll('.performance-category')];
+            return {url: location.search, sections: sections.map(s => s.dataset.category),
+                    collapsible: sections.some(s => s.classList.contains('is-collapsible')),
+                    total: document.querySelector('[data-testid="total-count"]').textContent.trim()};
+        }"""
+        links = "() => [...document.querySelectorAll('[data-category-chips] a, .product-chip, a.toolbar-print')].map(a => a.getAttribute('href'))"
+        with sync_playwright() as engine:
+            browser = engine.chromium.launch()
+            try:
+                page = browser.new_page(viewport={'width': 1280, 'height': 900})
+                self.login(page, 'browser-employee')
+                page.wait_for_url('**/performance/')
+                # 클릭 직후(서버 응답 전) 같은 순간에 목록·주소·총수가 이미 바뀌어 있다
+                now = page.evaluate(click_now, 'central')
+                self.assertEqual(now, {'url': '?category=central', 'sections': ['central'], 'collapsible': False, 'total': '1'})
+                page.wait_for_load_state('networkidle')
+                synced = page.evaluate(links)
+                page.reload()
+                self.assertEqual(page.evaluate(links), synced)   # 뒤에서 맞춘 링크는 서버가 새로 그린 것과 같다
+                # 분류를 고른 화면에서 바로 열어도, 다른 분류로 즉시 바뀐다(전체 목록을 뒤에서 미리 받아 둠)
+                page.wait_for_load_state('networkidle')
+                # 분류는 여러 개 고르기(기존 기준): 중앙정부를 고른 채 공공기관을 누르면 둘 다
+                now = page.evaluate(click_now, 'public')
+                self.assertEqual(now, {'url': '?category=central&category=public', 'sections': ['central', 'public'], 'collapsible': False, 'total': '4'})
+                page.wait_for_load_state('networkidle')
+                expect(page.locator('#section-public .customer-card')).to_have_count(3)
+                now = page.evaluate(click_now, 'central')   # 중앙정부를 빼면 공공기관만
+                self.assertEqual(now, {'url': '?category=public', 'sections': ['public'], 'collapsible': False, 'total': '3'})
+                now = page.evaluate(click_now, 'public')   # 다시 누르면 해제 → 전체(접기 있는 전체 보기)
+                self.assertEqual(now['url'], '')
+                self.assertEqual(now['sections'], ['central', 'public'])
+                self.assertEqual(now['total'], '4')
+            finally:
+                browser.close()
+
     def test_tabs_search_views_and_mobile_sheet_keep_server_state_and_counts(self):
         for index in range(30):
             customer = Customer.objects.create(organization=Organization.objects.create(official_name=f'스크롤 가상 기관 {index:02}'), category='public', partner_public=True)
