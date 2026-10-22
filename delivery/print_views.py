@@ -44,7 +44,11 @@ def context_for(request):
     query.setlist('products', [str(p.pk) for p in form.cleaned_data['products']])
     query.setlist('category', form.cleaned_data['category'])
     query['scope'] = scope
-    return {**document, **document_assets(), 'scope_form': scope_form, 'query': query.urlencode(),
+    # '← 납품현황'은 고른 제품·분류를 그대로 들고 돌아간다(2026-10-22 형우).
+    back = QueryDict('', mutable=True)
+    back.setlist('products', [str(p.pk) for p in form.cleaned_data['products']])
+    back.setlist('category', form.cleaned_data['category'])
+    return {**document, **document_assets(), 'scope_form': scope_form, 'query': query.urlencode(), 'back_query': back.urlencode(),
             'selected_products': [str(p.pk) for p in form.cleaned_data['products']],
             'selected_categories': form.cleaned_data['category']}, True
 
@@ -73,6 +77,8 @@ def download(request):
         logging.getLogger(__name__).exception('Reference PDF generation failed')
         return render(request, 'portal/print_error.html', {'pdf_failed': True}, status=503)
     response = HttpResponse(result, content_type='application/pdf')
-    response['Content-Disposition'] = 'attachment; filename="gitsn-references-' + context['date'].strftime('%Y%m%d') + '.pdf"'
+    # 폰에서 '인쇄'는 이 PDF를 화면에 바로 연다(inline=1, 2026-10-22 형우). 폰 브라우저 인쇄는 자기 여백·머리글 때문에 쪽이 넘친다.
+    disposition = 'inline' if request.GET.get('inline') == '1' else 'attachment'
+    response['Content-Disposition'] = disposition + '; filename="gitsn-references-' + context['date'].strftime('%Y%m%d') + '.pdf"'
     response['Content-Length'] = len(result)
     return response

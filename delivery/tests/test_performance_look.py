@@ -83,6 +83,17 @@ class RegionSectionsHttp(TestCase):
         # 요약 칸은 분류 단위 그대로.
         self.assertContains(response, '<span>지방자치단체</span><strong>4<small>곳</small></strong>', html=True)
 
+    def test_category_chips_keep_their_own_counts_when_a_category_is_picked(self):
+        response = self.get(self.employee, query={'category': 'local'})
+        chips = {g['code']: g for g in response.context['groups']}
+        self.assertEqual(response.context['counts']['total'], 4)
+        self.assertEqual((chips['central']['count'], chips['central']['active']), (1, False))
+        self.assertEqual((chips['local']['count'], chips['local']['active']), (4, True))
+        self.assertNotIn('category=local', chips['local']['url'])
+        self.assertContains(response, 'data-category-chips')
+        self.assertContains(response, 'is-dim')
+        self.assertNotContains(response, 'category-tabs')
+
     def test_partner_sees_private_count_on_its_region_section(self):
         groups = self.get(self.partner).context['list_groups']
         capital = next(g for g in groups if g['label'] == '지방자치단체(수도권)')
@@ -93,13 +104,14 @@ class RegionSectionsHttp(TestCase):
         labels = [g['label'] for g in self.get(self.employee).context['list_groups'] if g['code'] == 'local']
         self.assertEqual(labels[-1], '지방자치단체')
 
-    def test_region_sections_continue_across_pages(self):
+    def test_region_sections_hold_all_rows_without_pages(self):
+        # 2026-10-22 형우: 페이지 없음(기준 변경 이유)
         for index in range(24):
             make_customer(f'수도권 가상 기관 {index:02}', 'local', 'capital', product=self.p)
-        groups = self.get(self.employee, query={'category': 'local', 'page': 2}).context['list_groups']
-        self.assertEqual(groups[0]['label'], '지방자치단체(수도권)')
-        self.assertTrue(groups[0]['continued'])
-        self.assertEqual(groups[0]['count'], 26)
+        groups = self.get(self.employee, query={'category': 'local'}).context['list_groups']
+        capital = groups[0]
+        self.assertEqual((capital['label'], capital['count'], len(capital['items']), capital['continued']),
+                         ('지방자치단체(수도권)', 26, 26, False))
 
     def test_print_document_uses_the_same_region_sections(self):
         response = self.get(self.employee, '/performance/print/')
@@ -121,7 +133,7 @@ class PerformanceLookBrowser(StaticLiveServerTestCase):
     def setUp(self):
         make_user('look-browser', 'employee')
         product = Product.objects.create(code='look-browser-p', name='룩 가상 P', marker='P')
-        for index in range(8):
+        for index in range(12):
             make_customer(f'룩 가상 기관 {index}', 'public', product=product)
         make_customer('룩 수도권 가상 시청', 'local', 'capital', product=product)
 
@@ -143,15 +155,51 @@ class PerformanceLookBrowser(StaticLiveServerTestCase):
                 expect(page.locator('.topbar nav')).to_be_visible()
                 self.assertEqual(style('body', 'backgroundColor'), 'rgb(242, 245, 248)')
                 self.assertEqual(style('.view-card .performance-grid .customer-card', 'borderRadius'), '8px')
-                self.assertNotEqual(style('.category-tabs', 'backdropFilter'), 'none')
-                self.assertEqual(style('.category-tabs', 'position'), 'sticky')
+                expect(page.locator('.category-tabs')).to_have_count(0)  # 2026-10-22: 탭 대신 분류 칸
+                self.assertNotEqual(style('.performance-summary', 'backdropFilter'), 'none')
                 expect(page.get_by_role('heading', name='지방자치단체(수도권)')).to_be_visible()
+                # 섹션 접기: 1280px은 한 줄 4개 → 두 줄 8개만. '모두 보기 ▾' ↔ '접기 ▴'(2026-10-22 형우)
+                visible = lambda: page.locator('#section-public .customer-card').evaluate_all('cs => cs.filter(c => c.offsetParent).length')
+                more = page.locator('#section-public [data-section-more]')
+                expect(more).to_have_text('더 보기 ▾')
+                self.assertEqual(visible(), 8)
+                more.click()   # 두 줄씩 더(12개라 다 보임)
+                expect(more).to_have_text('접기 ▴')
+                expect(page.locator('#section-public [data-section-fold]')).to_be_visible()
+                self.assertEqual(visible(), 12)
+                # 섹션 바로가기: 띠의 '목차 ▾' → 분류 줄(지자체·의회는 권역 칩) → 섹션으로 이동
+                page.evaluate('window.scrollTo(0, document.documentElement.scrollHeight)')
+                toggle = page.locator('[data-band-toggle]')
+                expect(toggle).to_be_visible()
+                expect(toggle).to_contain_text('목차')
+                toggle.click()
+                panel = page.locator('[data-band-panel]')
+                expect(panel).to_be_visible()
+                expect(panel.locator('li')).to_have_count(2)
+                expect(panel.locator('.band-region')).to_have_text(['수도권'])
+                panel.get_by_role('button', name='공공기관', exact=False).click()
+                expect(panel).to_be_hidden()
+                page.wait_for_function('Math.abs(document.getElementById("section-public").getBoundingClientRect().top - 72) < 6')
+                # 제목 옆 '접기 ▴'로 다시 두 줄
+                page.locator('#section-public [data-section-fold]').click()
+                expect(more).to_have_text('더 보기 ▾')
+                self.assertEqual(visible(), 8)
 
                 # 폰: ☰ 한 줄, 제목 축약, 누르는 곳 44px, 가로 스크롤 없음.
                 page.set_viewport_size({'width': 375, 'height': 812})
                 page.reload()
                 expect(page.locator('.title-short')).to_have_text('지슨 고객사')
                 expect(page.locator('.title-full')).to_be_hidden()
+                # 폰 리스트(2026-10-22 형우): 전체 보기에서 섹션마다 5줄, 한 줄 배치, ↑ 동그라미
+                self.assertTrue(page.locator('[data-view-root]').evaluate("el => el.classList.contains('view-list')"))
+                self.assertEqual(visible(), 5)
+                expect(more).to_have_text('더 보기 ▾')
+                more.click()   # 리스트는 열 줄씩 더(12개라 다 보임)
+                self.assertEqual(visible(), 12)
+                expect(more).to_have_text('접기 ▴')
+                row = page.locator('#section-public .customer-card').first.bounding_box()
+                self.assertLess(row['height'], 56)
+                expect(page.locator('.section-label .hint')).to_be_hidden()
                 self.assertEqual(style('.page-head h1', 'fontSize'), '22px')
                 menu = page.locator('.look-menu-btn')
                 expect(menu).to_be_visible()
@@ -161,7 +209,7 @@ class PerformanceLookBrowser(StaticLiveServerTestCase):
                 expect(menu).to_have_attribute('aria-expanded', 'true')
                 expect(page.locator('.topbar nav')).to_be_visible()
                 expect(page.get_by_role('button', name='로그아웃', exact=True)).to_be_visible()
-                heights = page.evaluate('''[...document.querySelectorAll('.topbar nav a, .topbar form .button, .look-menu-btn, .mobile-bar > .button, .mobile-bar .view-toggle button, .category-tab')]
+                heights = page.evaluate('''[...document.querySelectorAll('.topbar nav a, .topbar form .button, .look-menu-btn, .mobile-bar > .button, .mobile-bar .view-toggle button, .category-chip')]
                     .filter(el => el.offsetParent).map(el => el.getBoundingClientRect().height)''')
                 self.assertTrue(heights and min(heights) >= 44, heights)
                 menu.click()

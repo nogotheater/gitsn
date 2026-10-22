@@ -8,6 +8,7 @@
 import re
 
 from . import admin_areas as aa
+from .products import PRODUCT_ORDER
 
 EAVESDROP = 'eavesdrop'
 CAMERA = 'camera'
@@ -16,7 +17,7 @@ FAMILIES = (
     (CAMERA, '불법촬영 보안', ('C',)),
 )
 FAMILY_LABEL = {key: label for key, label, _m in FAMILIES}
-MARKER_ORDER = ('I', 'S', 'B', 'D', 'P', 'C')
+MARKER_ORDER = PRODUCT_ORDER   # 2026-10-22 형우: 화면 전체 제품 순서와 같게(I, S, B, D, P, H, C)
 
 
 def family_of_marker(marker):

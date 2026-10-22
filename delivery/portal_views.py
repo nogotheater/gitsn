@@ -10,6 +10,7 @@ from django.http import FileResponse, Http404, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_http_methods
+from .domain.products import product_sort_key
 from .models import Category, Region, DisplayKind, Customer, Contract, SitePresentation, Product
 from .portal_forms import DeliveryAuthenticationForm, PerformanceFilterForm, AccountCreateForm, AccountEditForm, AccountPasswordForm
 from .planning_views import planning_only, attach_errors
@@ -89,28 +90,32 @@ def performance(request):
         for product in item['products']:
             product['emphasized'] = bool(selected_ids) and product['id'] in selected_ids
             product['subdued'] = bool(selected_ids) and product['id'] not in selected_ids
-        item['products'] = sorted(item['products'], key=lambda p: (p['subdued'], p['name'], p['id']))
+        item['products'] = sorted(item['products'], key=lambda p: (p['subdued'], *product_sort_key(p['marker'], p['name'], p['id'])))
     # The name search only narrows what is listed; counts, sections and printing ignore it.
     if search:
         needle = search.casefold()
         items = [item for item in items if needle in item['name'].casefold()]
     print_query = filter_query(product_ids, categories)
     page_query = filter_query(product_ids, categories, search)
-    groups = [{'code': value, 'label': label, 'count': payload['counts']['by_category'].get(value, 0),
-               'private_count': payload['counts']['private_by_category'].get(value, 0)} for value, label in Category.choices]
-    page = Paginator(items, 24).get_page(request.GET.get('page'))
+    # 분류 칸(2026-10-22 형우: 탭 대신 요약 칸을 버튼으로). 칸 숫자는 분류 선택과 상관없이 각자 숫자를 보여준다.
+    # 제품 필터는 반영한다. 큰 숫자(counts.total)는 고른 분류의 합 그대로.
+    chip_counts = (current_performance_payload(request.user, selected_product_ids=product_ids, categories=[])['counts']
+                   if valid and categories else payload['counts'])
+    groups = [{'code': value, 'label': label, 'count': chip_counts['by_category'].get(value, 0),
+               'private_count': chip_counts['private_by_category'].get(value, 0)} for value, label in Category.choices]
+    # 2026-10-22 형우: 페이지를 없앤다(고객사 명부라 한 화면에). 전체 보기에서는 섹션을 두 줄로 접고(화면에서),
+    # 분류를 골랐거나 검색 중이면 다 펼친다. 'page'는 기존 템플릿·검사와 맞추려고 한 장짜리로 둔다.
+    page = Paginator(items, max(len(items), 1)).get_page(1)
     # 섹션은 분류 단위, 지자체·의회만 권역 단위(C2). 요약 칸(groups)은 분류 단위 그대로.
     item_section = lambda item: section_of(item['category'], item['region'])
-    previous_section = item_section(items[page.start_index() - 2]) if page.has_previous() else None
     visible_sections = {item_section(item) for item in items}
     list_groups = []
     for group in list_sections(payload['counts']):
         section = (group['code'], group['region'])
-        rows = [item for item in page if item_section(item) == section]
-        # A counted-only/private-only section is still represented numerically,
-        # once on the first page. Never fabricate cards for those customers.
-        if rows or (page.number == 1 and group['count'] and section not in visible_sections and not search):
-            list_groups.append({**group, 'items': rows, 'continued': bool(rows) and previous_section == section})
+        rows = [item for item in items if item_section(item) == section]
+        # A counted-only/private-only section is still represented numerically. Never fabricate cards for those customers.
+        if rows or (group['count'] and section not in visible_sections and not search):
+            list_groups.append({**group, 'items': rows, 'continued': False})
     # Every tab and chip is a link that toggles one value; products and categories are both multi-select.
     def toggled_url(products, chosen_categories):
         return filter_url(request.path, filter_query(products, chosen_categories, search))
@@ -121,6 +126,9 @@ def performance(request):
         chosen = [value for value, _ in Category.choices if (value in categories) != (value == code)]
         category_tabs.append({'code': code, 'label': SHORT_CATEGORY_LABELS[code], 'full_label': label,
                               'active': code in categories, 'url': toggled_url(product_ids, chosen)})
+    tab_by_code = {tab['code']: tab for tab in category_tabs}
+    for group in groups:
+        group.update(active=tab_by_code[group['code']]['active'], url=tab_by_code[group['code']]['url'])
     product_chips = []
     for product in form.product_catalog():
         active = product['id'] in selected_ids
@@ -128,12 +136,13 @@ def performance(request):
         product_chips.append({**product, 'active': active, 'url': toggled_url(chosen, categories)})
     return render(request, 'portal/performance.html', {
         'form': form, 'page': page, 'counts': payload['counts'], 'groups': groups, 'list_groups': list_groups,
+        'collapse_sections': not categories and not search,
         'filter_query': page_query.urlencode(), 'print_query': print_query.urlencode(),
         'has_filters': bool(product_ids or categories), 'search_query': search,
         'clear_search_url': filter_url(request.path, print_query),
         'category_tabs': category_tabs, 'selected_categories': categories,
         'selected_category_labels': [label for code, label in Category.choices if code in categories],
-        'show_category_strip': not categories, 'product_chips': product_chips,
+        'show_category_strip': valid, 'product_chips': product_chips,
         'active_products': [chip for chip in product_chips if chip['active']],
         'is_partner': audience == 'partner', 'filters_valid': valid}, status=200 if valid else 400)
 
@@ -144,7 +153,7 @@ def customer_detail(request, customer_id):
     customer = get_object_or_404(Customer.objects.select_related('organization'), pk=customer_id)
     quantities = customer_current_quantities(customer.pk)
     products = {str(p.pk): p for p in Product.objects.filter(pk__in=quantities)}
-    totals = sorted([(products[key], value) for key, value in quantities.items()], key=lambda row: row[0].name)
+    totals = sorted([(products[key], value) for key, value in quantities.items()], key=lambda row: product_sort_key(row[0].marker, row[0].name, row[0].pk))
     contracts = customer.contracts.select_related('contracting_party').prefetch_related('product_lines__product').defer(
         'source_email_subject', 'source_email_sender', 'source_email_received_on').order_by('-created_at')
     return render(request, 'portal/customer_detail.html', {'customer': customer, 'totals': totals,

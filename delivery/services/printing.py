@@ -6,6 +6,7 @@ from PIL import Image, ImageOps
 from django.conf import settings
 from django.core.exceptions import PermissionDenied, SuspiciousFileOperation, ValidationError
 from django.utils import timezone
+from delivery.domain.products import product_sort_key, short_and_long
 from delivery.models import Category, Customer, SitePresentation
 from .access import audience_for_user
 from .audience_performance import current_performance_payload
@@ -72,16 +73,16 @@ def print_document(user, cleaned, scope):
             groups.append({'label': label, 'rows': [cards[index:index + 4] for index in range(0, len(cards), 4)]})
     title = '지슨의 보안 솔루션 도입 고객사'
     subtitle = ''
-    if len(products) == 1:
-        title = products[0].code + ' 도입 고객사'
-        subtitle = products[0].name.removesuffix(products[0].code).strip()
-    elif products:
-        title = ', '.join(p.code for p in products) + ' 도입 고객사'
+    # 제목은 제품 코드로 'Alpha-I, Alpha-S 고객사'(2026-10-22 형우). 순서는 화면 전체 제품 순서(I, S, B, D, P, H, C).
+    titled = [short_and_long(p.code, p.name) for p in sorted(products, key=lambda p: product_sort_key(p.marker, p.name, p.pk))]
+    if len(titled) == 1:
+        title, subtitle = titled[0][0] + ' 고객사', titled[0][1]
+    elif titled:
+        title = ', '.join(short for short, _long in titled) + ' 고객사'
     conditions = []
     if len(products) > 1:
         conditions.append('선택 제품 중 하나 이상 도입')
-    if categories:
-        conditions.append(', '.join(Category(code).label for code in categories))
+    # 고른 분류는 바로 위 분류별 숫자 줄에 이미 나온다 — 조건 줄에는 다시 적지 않는다(2026-10-22 형우).
     return {'title': title, 'subtitle': subtitle, 'groups': groups, 'counts': payload['counts'],
             'category_totals': totals, 'conditions': ' · '.join(conditions),
             'scope_label': '공개 고객사 및 비공개 집계' if audience == 'partner' else dict(SCOPE_CHOICES)[scope],

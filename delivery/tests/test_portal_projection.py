@@ -85,13 +85,12 @@ class OverviewProjectionScenarios(SimpleTestCase):
         self.assertTrue(print_links)
         self.assertTrue(all('q=' not in link and 'category=public' in link for link in print_links))
 
-    def test_category_pagination_repeats_heading_without_dropping_rows(self):
+    def test_all_rows_render_once_on_one_screen_in_category_order(self):
+        # 2026-10-22 형우: 페이지 없음(기준 변경 이유). 접기는 화면(CSS)에서만 하고 카드는 모두 그린다.
         records = [self.record(index, 'central') for index in range(26)] + [self.record(30, 'education')]
-        first = self.response(records, audience='employee').content.decode()
-        second = self.response(records, audience='employee', query={'page': 2}).content.decode()
-        self.assertEqual(first.count('class="customer-card"'), 24)
-        self.assertEqual(second.count('class="customer-card"'), 3)
-        self.assertIn('— 계속', second)
-        self.assertLess(second.index('data-category="central"'), second.index('data-category="education"'))
+        html = self.response(records, audience='employee').content.decode()
+        self.assertEqual(html.count('class="customer-card"'), 27)
+        self.assertNotIn('— 계속', html)
+        self.assertLess(html.index('id="section-central"'), html.index('id="section-education"'))
         for index in range(26):
-            self.assertEqual((first + second).count(f'<h3>가상 고객사 {index:02}</h3>'), 1)
+            self.assertEqual(html.count(f'<h3>가상 고객사 {index:02}</h3>'), 1)

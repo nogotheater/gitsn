@@ -12,6 +12,7 @@ from django.urls import reverse
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_http_methods
 from .forms import PresentationForm, ContractForm, ProductFormSet, SiteFormSet, ProductCatalogForm, DuplicateSearchForm, DuplicateContractFormSet
+from .domain.products import ordered_products, product_sort_key
 from .models import Customer, Contract, Category, DisplayKind, SitePresentation, InstallationSite, Product
 from .services.access import require_manager
 from .services.planning import save_presentation, save_contract, end_contract, save_product, delete_product
@@ -101,7 +102,7 @@ def customer_detail(request, customer_id):
     products = Product.objects.in_bulk(quantities.keys())
     # in_bulk uses UUID keys; construct the display map explicitly.
     names = {str(product.pk): product for product in products.values()}
-    totals = [(names[key], quantity) for key, quantity in quantities.items()]
+    totals = sorted(((names[key], quantity) for key, quantity in quantities.items()), key=lambda row: product_sort_key(row[0].marker, row[0].name, row[0].pk))
     contracts = customer.contracts.select_related('contracting_party', 'superseded_by__customer__organization').prefetch_related('product_lines__product', 'site_links__site').order_by('-created_at')
     merged_duplicates = customer.merged_duplicates.select_related('organization').order_by('-merged_at')
     return render(request, 'planning/customer_detail.html', {'customer': customer, 'contracts': contracts, 'totals': totals,
@@ -262,7 +263,7 @@ def product_add(request, product_id=None):
         else:
             messages.success(request, '제품 정보를 저장했습니다.')
             return redirect('planning-product-add')
-    return render(request, 'planning/product_form.html', {'form': form, 'catalog': Product.objects.all().order_by('name'), 'editing_product': product})
+    return render(request, 'planning/product_form.html', {'form': form, 'catalog': ordered_products(Product.objects.all()), 'editing_product': product})
 
 
 @planning_only

@@ -6,3 +6,7 @@
 .location-hint{margin:-8px 0 16px;padding:10px 14px;border-radius:4px;background:var(--brand-tint);color:var(--brand-hover);font-size:14px}
 .location-hint .location-apply{min-height:32px;padding:4px 10px;margin-left:4px}
 .location-fields select:disabled{background:var(--surface-disabled);color:var(--text-disabled)}
+/* 지역(권역)이 숨으면 분류 칸이 한 줄을 다 쓴다(2026-10-22 형우) */
+.two-col.is-single{grid-template-columns:1fr}
+/* 고객사 화면은 체크가 하나라 안내 문장이 없다 — 아래 칸과 간격만 둔다 */
+.settings-box{margin-bottom:12px}

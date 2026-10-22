@@ -1,9 +1,13 @@
 (function () {
   'use strict';
   let preparation;
+  // 화면 폭에 맞춰 A4 쪽을 줄여 보인다. 문서가 넘친 뒤의 넓어진 폭이 아니라 실제 보이는 폭을 기준으로(2026-10-22 형우: 폰에서 잘림).
   function fitPreview() {
     const root = document.getElementById('print-document');
-    if (root) root.style.setProperty('--preview-scale', String(Math.min(1, Math.max(0.1, (window.innerWidth - 24) / (210 * 96 / 25.4)))));
+    const width = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
+    const scale = String(Math.min(1, Math.max(0.1, (width - 24) / (210 * 96 / 25.4))));
+    document.documentElement.style.setProperty('--preview-scale', scale);
+    if (root) root.style.setProperty('--preview-scale', scale);
   }
   async function paginate() {
     const root = document.getElementById('print-document');
@@ -57,4 +61,5 @@
   }
   window.GitsnPrint = {prepare() { if (!preparation) preparation = paginate(); return preparation; }};
   window.addEventListener('resize', fitPreview);
+  fitPreview();
 })();

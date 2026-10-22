@@ -55,9 +55,14 @@
     source = 'suggested';
     say(`명칭 기준으로 채웠어요: ${s.label} · ${TYPE_LABEL[s.institution_type] || ''}. 다르면 고쳐 주세요.`);
   }
+  const regionField = form.querySelector('[data-region-field]');
+  const categoryRow = form.querySelector('[data-category-row]');
   function visible() {
     const on = data.categories.includes(category.value);
     box.hidden = !on;
+    // 지역(권역)도 지자체·의회에서만(2026-10-22 형우). 다른 분류는 분류 칸이 한 줄을 다 쓴다.
+    if (regionField) regionField.hidden = !on;
+    if (categoryRow) categoryRow.classList.toggle('is-single', !on);
     return on;
   }
   async function suggest() {
@@ -94,6 +99,7 @@
   say('');
   name.addEventListener('input', later);
   category.addEventListener('change', () => { if (visible()) suggest(); });
+  visible();
   region.addEventListener('change', () => { regionAuto = false; later(); });
   sido.addEventListener('change', () => { source = 'manual'; fillUnits(sido.value, ''); followRegion(); say(''); });
   unit.addEventListener('change', () => { source = 'manual'; say(''); });

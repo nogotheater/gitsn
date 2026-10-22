@@ -32,7 +32,8 @@ def _settings(obj, data, *, fallback_category=None, fallback_region=''):
     # Clear optional region deliberately on a full customer/place edit.
     if fallback_category is None:
         obj.region = data.get('region', '')
-    obj.show_in_list = bool(data.get('show_in_list'))
+    if 'show_in_list' in data:   # 고객사 화면에는 이 칸이 없다(2026-10-22 형우) — 없으면 저장된 값(새 고객사는 표시)
+        obj.show_in_list = bool(data.get('show_in_list'))
     obj.include_in_total = bool(data.get('include_in_total'))
     obj.display_as = data.get('display_as') or obj.display_as
     policy = data.get('partner_public') or 'default'

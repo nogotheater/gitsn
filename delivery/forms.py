@@ -5,6 +5,7 @@ from django.contrib.auth.forms import AuthenticationForm
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.forms import BaseFormSet, formset_factory
 from .domain.duplicates import ContractMergeDecision
+from .domain.products import ordered_products
 from .domain.quantities import positive_quantity
 from .models import Category, Region, DisplayKind, InstitutionType, Organization, Customer, Contract, InstallationSite, Product
 from .services.access import require_manager
@@ -68,6 +69,10 @@ class PresentationForm(forms.Form):
         if with_location:
             self.fields['location_sido'].choices = sido_choices()
             self.fields['location_unit'].choices = unit_choices()
+            # 고객사 화면 정리(2026-10-22 형우): '실적 목록에 표시'는 뺀다(저장된 값은 그대로, 새 고객사는 표시).
+            # 지역(권역)은 지자체·의회에서만 보이고 소재지를 따라간다.
+            del self.fields['show_in_list']
+            self.fields['region'].help_text = '소재지를 고르면 자동으로 맞춰집니다.'
         else:
             for name in ('location_sido', 'location_unit', 'institution_type'):
                 del self.fields[name]
@@ -89,6 +94,8 @@ class PresentationForm(forms.Form):
                 # 소재지를 고르면 지역(권역)은 소재지를 따른다. 제주는 권역이 없어 고른 지역을 그대로 둔다.
                 if REGION_OF_SIDO.get(sido):
                     data['region'] = REGION_OF_SIDO[sido]
+        if self.with_location and data.get('category') and data.get('category') not in LOCATION_CATEGORIES:
+            data['region'] = ''   # 다른 분류에서는 지역 칸이 숨는다 — 보이지 않는 값을 남기지 않는다
         if data.get('category') in {Category.LOCAL, Category.COUNCIL} and not data.get('region'):
             self.add_error('region', '지방자치단체·의회는 지역을 선택해 주세요.')
         if data.get('remove_logo') and data.get('logo'):
@@ -126,7 +133,7 @@ class WholeQuantityField(forms.Field):
 
 
 class ContractProductForm(forms.Form):
-    product = forms.ModelChoiceField(label='제품', queryset=Product.objects.all().order_by('name'))
+    product = forms.ModelChoiceField(label='제품', queryset=ordered_products(Product.objects.all()))
     quantity = WholeQuantityField(label='수량')
 
 
@@ -149,7 +156,7 @@ class ProductRows(BaseFormSet):
 class ContractSiteForm(forms.Form):
     existing_site = forms.ModelChoiceField(label='기존 설치 장소', queryset=InstallationSite.objects.all().order_by('official_name'), required=False)
     new_site_name = forms.CharField(label='새 설치 장소 명칭', max_length=255, required=False)
-    products = forms.ModelMultipleChoiceField(label='이 장소의 실제 설치 제품', queryset=Product.objects.all().order_by('name'), widget=forms.CheckboxSelectMultiple)
+    products = forms.ModelMultipleChoiceField(label='이 장소의 실제 설치 제품', queryset=ordered_products(Product.objects.all()), widget=forms.CheckboxSelectMultiple)
     show_in_list = forms.BooleanField(label='실적 목록에 표시', required=False)
     include_in_total = forms.BooleanField(label='총 고객사 수에 포함', required=False)
     update_display = forms.BooleanField(label='기존 장소의 표시 설정도 변경', required=False,

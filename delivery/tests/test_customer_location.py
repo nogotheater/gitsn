@@ -117,6 +117,30 @@ class CustomerLocationHttp(TestCase):
     def test_site_edit_form_has_no_location_fields(self):
         self.assertNotIn('location_sido', PresentationForm(with_location=False).fields)
 
+    def test_customer_form_has_no_list_toggle_and_keeps_saved_value(self):
+        # 2026-10-22 형우: 고객사 화면에서 '실적 목록에 표시'를 뺐다. 새 고객사는 표시, 저장된 값은 그대로(설치 장소 화면에는 남음).
+        self.assertNotIn('show_in_list', PresentationForm(with_location=True).fields)
+        self.assertIn('show_in_list', PresentationForm(with_location=False).fields)
+        self.assertNotContains(self.client.get(reverse('planning-customer-new')), '실적 목록에 표시')
+        customer = self.create(show_in_list='')
+        self.assertTrue(customer.show_in_list)
+        Customer.objects.filter(pk=customer.pk).update(show_in_list=False)
+        customer.refresh_from_db()
+        response = self.client.post(reverse('planning-customer-edit', args=[customer.pk]),
+                                    self.data(memo='메모', revision=customer.updated_at.isoformat()))
+        self.assertEqual(response.status_code, 302)
+        customer.refresh_from_db()
+        self.assertFalse(customer.show_in_list)
+
+    def test_region_only_for_local_and_council(self):
+        # 2026-10-22 형우: 지역(권역)은 지자체·의회에서만 보이고, 다른 분류로 저장하면 비운다.
+        self.assertContains(self.client.get(reverse('planning-customer-new')), 'data-region-field hidden')
+        customer = self.create(official_name='가상 공공기관', category='public', region='capital',
+                               location_sido='', location_unit='', institution_type='')
+        self.assertEqual(customer.region, '')
+        edit = self.client.get(reverse('planning-customer-edit', args=[self.create().pk]))
+        self.assertNotContains(edit, 'data-region-field hidden')
+
 
 @skipUnless(os.environ.get('GITSN_RUN_BROWSER_TESTS') == '1', 'Enable Chromium verification on PostgreSQL.')
 @override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'])
@@ -165,7 +189,9 @@ class CustomerLocationBrowser(StaticLiveServerTestCase):
                 # 다른 분류에서는 숨는다
                 page.locator('[name="category"]').select_option('public')
                 expect(box).to_be_hidden()
+                expect(page.locator('[data-region-field]')).to_be_hidden()   # 지역도 지자체·의회에서만(2026-10-22 형우)
                 page.locator('[name="category"]').select_option('local')
+                expect(page.locator('[data-region-field]')).to_be_visible()
                 page.get_by_role('button', name='고객사 등록', exact=True).click()
                 page.wait_for_url('**/planning/customers/*/')
                 expect(page.get_by_test_id('customer-location')).to_have_text('소재지 충남 천안시 · 행정기관')

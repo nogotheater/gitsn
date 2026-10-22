@@ -71,23 +71,36 @@ class PrintingHttpScenarios(TestCase):
         self.assertEqual(response.context['counts']['total'], 2)
         heading = re.search(r'<h1>(.*?)</h1>', response.content.decode(), re.S)
         self.assertIsNotNone(heading)
-        self.assertEqual(heading[1], 'Alpha-C, Alpha-I 도입 고객사')
+        self.assertEqual(heading[1], 'Alpha-I, Alpha-C 고객사')   # 2026-10-22 형우: '도입' 없이, 제품 순서(I, S, B, D, P, H, C)
         self.assertEqual(response.context['selected_products'], [str(self.c.pk), str(self.i.pk)])
         reverse = self.get_preview(self.employee, scope='all', products=[str(self.i.pk), str(self.c.pk)])
-        self.assertEqual(reverse.context['title'], 'Alpha-I, Alpha-C 도입 고객사')
+        self.assertEqual(reverse.context['title'], 'Alpha-I, Alpha-C 고객사')
         self.assertEqual(reverse.context['counts']['total'], 2)
         with patch('delivery.print_views.render_pdf', return_value=b'%PDF-1.7\nexample') as renderer:
             pdf_response = self.client.get('/performance/print/pdf/', {'scope': 'all', 'products': [str(self.c.pk), str(self.i.pk)]})
         self.assertEqual(pdf_response.status_code, 200)
+        self.assertTrue(pdf_response['Content-Disposition'].startswith('attachment;'))
+        with patch('delivery.print_views.render_pdf', return_value=b'%PDF-1.7\nexample'):
+            inline = self.client.get('/performance/print/pdf/', {'scope': 'all', 'inline': '1'})
+        self.assertTrue(inline['Content-Disposition'].startswith('inline;'))   # 폰 '인쇄'용(2026-10-22 형우)
         pdf_heading = re.search(r'<h1>(.*?)</h1>', renderer.call_args.args[0], re.S)
         self.assertIsNotNone(pdf_heading)
         self.assertEqual(pdf_heading[1], heading[1])
         for value in ['product-mark', 'PRINT_SOURCE_SENTINEL', 'PRINT_MEMO_SENTINEL', '19대', '표시 목록', '전체 지역', '금융 0곳']:
             self.assertNotContains(response, value)
         single = self.get_preview(self.employee, scope='public', products=[str(self.c.pk)])
-        self.assertContains(single, '<h1>Alpha-C 도입 고객사</h1>', html=True)
+        self.assertContains(single, '<h1>Alpha-C 고객사</h1>', html=True)
+        self.assertNotContains(single, '자료 작성일')   # 2026-10-22 형우: 바닥 왼쪽 문구 삭제
         self.assertEqual(single.context['counts']['total'], 1)
         self.assertEqual(self.get_preview(self.employee, scope='public', category='local').context['counts']['total'], 0)
+
+    def test_back_link_keeps_filters_and_chosen_category_is_not_repeated(self):
+        # 2026-10-22 형우: '← 납품현황'은 고른 제품·분류 그대로, 고른 분류는 조건 줄에 다시 적지 않는다(분류별 숫자 줄에 이미 있음).
+        response = self.get_preview(self.employee, scope='all', category='public', products=[str(self.c.pk)])
+        self.assertContains(response, 'href="/performance/?products=%s&amp;category=public"' % self.c.pk)
+        self.assertNotContains(response, 'class="conditions"')
+        several = self.get_preview(self.employee, scope='all', products=[str(self.c.pk), str(self.i.pk)])
+        self.assertContains(several, '<p class="conditions">선택 제품 중 하나 이상 도입</p>', html=True)
 
     def test_output_contains_all_filtered_rows_beyond_current_screen_page(self):
         for index in range(30):
@@ -112,7 +125,9 @@ class PrintingHttpScenarios(TestCase):
         self.assertIn('category=public', preview.context['query'])
         self.assertIn('category=education', preview.context['query'])
         self.assertNotIn('q=', preview.context['query'])
-        self.assertContains(preview, '공공기관, 교육')
+        # 2026-10-22 형우: 고른 분류는 조건 줄에 다시 적지 않는다 — 분류별 숫자 줄에 고른 분류만 나온다.
+        self.assertNotContains(preview, '공공기관, 교육')
+        self.assertEqual([row['label'] for row in preview.context['category_totals']], ['공공기관'])   # 0곳인 교육은 숫자 줄에 나오지 않는다(기존 규칙)
         self.assertNotContains(preview, 'PRINT_PRIVATE_SENTINEL')
         with patch('delivery.print_views.render_pdf', return_value=b'%PDF-1.7\nexample') as renderer:
             response = self.client.get('/performance/print/pdf/', query)

@@ -165,25 +165,34 @@ class PortalHttpScenarios(TestCase):
         self.assertIn(f'products={self.c.pk}', tabs['local']['url'])
         self.assertIn('category=education', tabs['education']['url'])
         self.assertEqual(tabs['']['url'], f'/performance/?products={self.c.pk}')
-        self.assertFalse(response.context['show_category_strip'])
+        # 2026-10-22 형우: 요약의 분류 칸이 버튼이 되어(분류 탭 대신) 분류를 골라도 계속 보인다.
+        self.assertTrue(response.context['show_category_strip'])
         self.assertTrue(self.view(self.employee).context['show_category_strip'])
         chips = {chip['id']: chip for chip in response.context['product_chips']}
         self.assertTrue(chips[str(self.c.pk)]['active'])
         self.assertNotIn('products=', chips[str(self.c.pk)]['url'])
         self.assertIn('category=local', chips[str(self.i.pk)]['url'])
 
-    def test_category_order_continues_across_pages_and_keeps_overall_counts(self):
+    def test_no_pages_all_rows_on_one_screen_and_sections_fold_only_in_full_view(self):
+        # 2026-10-22 형우: 페이지를 없앴다(기준 변경 이유: 끝 페이지까지 '다음'을 여러 번 눌러야 했음).
         for index in range(26):
             customer = self.customer(f'중앙 가상 기관 {index:02}', True, 'central')
             self.contract(customer, self.c, 1)
         response = self.view(self.employee, {'page': 2})
         groups = response.context['list_groups']
         self.assertEqual(groups[0]['code'], 'central')
-        self.assertTrue(groups[0]['continued'])
+        self.assertFalse(groups[0]['continued'])
         self.assertEqual(groups[0]['count'], 26)
-        self.assertEqual(len(groups[0]['items']), 2)
+        self.assertEqual(len(groups[0]['items']), 26)
         self.assertEqual(response.context['counts']['total'], 30)
-        self.assertContains(response, '— 계속')
+        self.assertNotContains(response, '— 계속')
+        self.assertNotContains(response, 'class="pagination"')
+        self.assertTrue(response.context['collapse_sections'])
+        self.assertContains(response, 'data-section-more')
+        picked = self.view(self.employee, {'category': 'central'})
+        self.assertFalse(picked.context['collapse_sections'])
+        self.assertNotContains(picked, 'data-section-more')
+        self.assertFalse(self.view(self.employee, {'q': '중앙'}).context['collapse_sections'])
 
     def test_ending_one_product_contract_changes_current_filters_not_history(self):
         self.secret_i.is_active = False

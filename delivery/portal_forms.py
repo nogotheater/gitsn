@@ -2,6 +2,7 @@ from django import forms
 from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import AuthenticationForm, SetPasswordForm
 from django.core.exceptions import PermissionDenied, ValidationError
+from .domain.products import ordered_products
 from .models import Category, Product
 from .services.access import audience_for_user
 
@@ -22,7 +23,7 @@ class DeliveryAuthenticationForm(AuthenticationForm):
 
 class PerformanceFilterForm(forms.Form):
     """Server-validated list conditions. Products and categories are both multi-select (OR)."""
-    products = forms.ModelMultipleChoiceField(label='도입 제품', queryset=Product.objects.all().order_by('name', 'pk'),
+    products = forms.ModelMultipleChoiceField(label='도입 제품', queryset=ordered_products(Product.objects.all()),
                                               required=False, widget=forms.CheckboxSelectMultiple,
                                               help_text='선택한 제품 중 하나 이상 도입한 고객사를 표시합니다.')
     category = forms.MultipleChoiceField(label='고객 분류', choices=Category.choices, required=False,

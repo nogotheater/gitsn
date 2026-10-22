@@ -20,3 +20,10 @@
 - 새 파일: `delivery/services/customer_location.py`, `delivery/services/customer_delete.py`, `templates/planning/customer_delete.html`, `static/delivery/customer-location.js`, `static/delivery/customer-location.css`
 - 수정: `delivery/forms.py`(PresentationForm with_location), `delivery/services/planning.py`, `delivery/planning_views.py`, `config/urls.py`, `templates/planning/presentation_form.html`, `customer_detail.html`, `customer_list.html`
 - 검사: `delivery/tests/test_customer_location.py`, `delivery/tests/test_customer_delete.py`
+
+## 고객사 등록·수정 화면 정리 (2026-10-22 형우 확정)
+- 검토 후보: 실적 목록에 표시 / 총 고객사 수에 포함 / 표시 구분 / 지역. 형우 선택: 1번(실적 목록에 표시)만 빼고, 지역은 지자체·의회에서만.
+- '실적 목록에 표시': 고객사 화면에서 뺌. 새 고객사는 표시로 저장, 이미 저장된 값은 그대로 둠(설치 장소 설정 화면에는 남아 있음). 중복 통합은 지금처럼 자동으로 끔.
+- 지역(권역): 지자체·의회일 때만 보이고 소재지를 따라감(안내 "소재지를 고르면 자동으로 맞춰집니다."). 다른 분류에서는 칸이 숨고, 저장하면 지역 값을 비움(보이지 않는 값을 남기지 않음 — 카드의 '· 수도권' 꼬리도 사라짐).
+- 그대로: 총 고객사 수에 포함, 표시 구분, 파트너사 공개 여부, 심볼, 참고 메모.
+- 검사 추가: test_customer_location (목록 표시 칸 없음·저장값 유지, 지역은 지자체·의회만).

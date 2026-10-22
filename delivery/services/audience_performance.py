@@ -8,6 +8,7 @@ from uuid import UUID
 from django.core.exceptions import ValidationError
 from django.db.models import F, Q
 from delivery.domain.audience import ProductBadge, TargetRecord, project_targets
+from delivery.domain.products import product_sort_key
 from delivery.models import (
     Category, Contract, ContractProduct, Customer, SitePresentation,
     SiteProductSelection, UserAccessProfile,
@@ -83,7 +84,7 @@ def current_performance_payload(user, *, selected_product_ids=(), categories=(),
     ):
         for row in rows:
             name, has_logo = metadata.get(row['id'], ('', False))
-            products = tuple(sorted(badges[row['id']].values(), key=lambda badge: badge.id))
+            products = tuple(sorted(badges[row['id']].values(), key=lambda badge: product_sort_key(badge.marker, badge.name, badge.id)))
             records.append(TargetRecord(
                 **{**row, 'id': str(row['id'])}, kind=kind, name=name,
                 has_logo=has_logo, products=products,
