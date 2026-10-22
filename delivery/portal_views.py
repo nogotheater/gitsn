@@ -84,8 +84,10 @@ def performance(request):
     product_ids = [str(p.pk) for p in data['products']]
     categories = list(data['category'])
     search = data['q']
+    # 제품·분류를 하나도 안 고른 화면은 브라우저가 '전체 목록'으로 들고 있다가 칩을 누르면 그 자리에서 고른다(2026-10-22 형우: 속도)
+    base_view = valid and not product_ids and not categories
     if valid:
-        payload = current_performance_payload(request.user, selected_product_ids=product_ids, categories=categories)
+        payload = current_performance_payload(request.user, selected_product_ids=product_ids, categories=categories, with_index=base_view)
     else:
         payload = {'items': [], 'counts': {'total': 0, 'public': 0, 'private': 0, 'by_category': {}, 'private_by_category': {}}}
     selected_ids = set(product_ids)
@@ -96,7 +98,10 @@ def performance(request):
     zero = '00000000-0000-0000-0000-000000000000'
     detail_base = {'customer': reverse('employee-customer', args=[zero]), 'site': reverse('employee-site', args=[zero])}
     logo_base = {kind: reverse('performance-logo', args=[kind, zero]) for kind in detail_base}
+    catalog = form.product_catalog()
+    product_bit = {product['id']: 1 << index for index, product in enumerate(catalog)} if len(catalog) <= 30 else {}
     for item in items:
+        item['pm'] = sum(product_bit.get(product['id'], 0) for product in item['products'])
         item['detail_url'] = detail_base[item['kind']].replace(zero, item['id'])
         item['logo_url'] = logo_base[item['kind']].replace(zero, item['id']) if item['has_logo'] else ''
         item['initial'] = item['name'][:1]
@@ -107,6 +112,7 @@ def performance(request):
             product['emphasized'] = bool(selected_ids) and product['id'] in selected_ids
             product['subdued'] = bool(selected_ids) and product['id'] not in selected_ids
             product['badge'] = badge_color(product['color'])
+            product['bit'] = product_bit.get(product['id'], 0)
         item['products'] = sorted(item['products'], key=lambda p: (p['subdued'], *product_sort_key(p['marker'], p['name'], p['id'])))
     # The name search only narrows what is listed; counts, sections and printing ignore it.
     if search:
@@ -147,10 +153,21 @@ def performance(request):
     for group in groups:
         group.update(active=tab_by_code[group['code']]['active'], url=tab_by_code[group['code']]['url'])
     product_chips = []
-    for product in form.product_catalog():
+    for product in catalog:
         active = product['id'] in selected_ids
         chosen = [value for value in product_ids if value != product['id']] if active else product_ids + [product['id']]
         product_chips.append({**product, 'active': active, 'url': toggled_url(chosen, categories)})
+    count_index = None
+    if base_view and product_bit:
+        keys = []
+        rows = []
+        for category, region, public, ids in payload.get('index', []):
+            section = section_of(category, region)
+            key = f'{section[0]}-{section[1]}' if section[1] else section[0]
+            if key not in keys:
+                keys.append(key)
+            rows.append([keys.index(key), category, 1 if public else 0, sum(product_bit.get(value, 0) for value in ids)])
+        count_index = {'products': [product['id'] for product in catalog], 'sections': keys, 'rows': rows}
     if hasattr(request, 'timing'):
         request.timing['data'] = (perf_counter() - started) * 1000   # 자료 준비 시간(나머지는 화면 그리기)
     return render(request, 'portal/performance.html', {
@@ -163,7 +180,7 @@ def performance(request):
         'selected_category_labels': [label for code, label in Category.choices if code in categories],
         'show_category_strip': valid, 'product_chips': product_chips,
         'active_products': [chip for chip in product_chips if chip['active']],
-        'is_partner': audience == 'partner', 'filters_valid': valid}, status=200 if valid else 400)
+        'is_partner': audience == 'partner', 'filters_valid': valid, 'count_index': count_index}, status=200 if valid else 400)
 
 
 @employee_only

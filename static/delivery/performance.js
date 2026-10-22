@@ -168,119 +168,203 @@
     const again = focusKey && root.querySelector(`[data-live-key="${focusKey}"]`);
     if (again) again.focus({ preventScroll: true });
   }
-  // 분류 칩은 누르는 즉시(2026-10-22 형우: '중앙정부→공공기관 누르면 1~2초 뒤에 바뀐다').
-  // 같은 제품·검색 조건의 '전체 목록'을 한 벌 들고 있다가 그 안에서 고른 분류만 남긴다. 서버 확인은 뒤에서 조용히.
-  const fullReady = new Map();   // 제품·검색 조건 → { list, total }
+  // 칩은 누르는 즉시(2026-10-22 형우: 분류 칩도 제품 칩도 '누르고 1~2초 뒤에 바뀐다' → 바로).
+  // 제품·분류를 안 고른 '전체 목록'과 집계표(#count-index: 분류·권역·공개 여부·제품만, 이름 없음)를 한 벌 들고 있다가
+  // 누르면 그 안에서 고르고 숫자를 다시 센다. 링크·숨은 칸·인쇄 주소 등 나머지는 뒤에서 서버 응답으로 조용히 맞춘다.
+  const fullReady = new Map();   // 검색어 → { list, index }
   const fullPending = new Set();
-  function baseParams(url) {
+  const partner = root.hasAttribute('data-partner');
+  function readState(url) {
     const u = new URL(url, window.location.href);
-    const p = new URLSearchParams();
-    u.searchParams.getAll('products').forEach(v => p.append('products', v));
-    if (u.searchParams.get('q')) p.set('q', u.searchParams.get('q'));
-    return { path: u.pathname, params: p };
+    return { path: u.pathname, products: u.searchParams.getAll('products'), categories: u.searchParams.getAll('category'), q: u.searchParams.get('q') || '' };
   }
-  function baseKey(url) { const b = baseParams(url); return b.path + '?' + b.params.toString(); }
-  function categoryUrl(url, codes) {
-    const { path, params } = baseParams(url);
+  function buildUrl(path, products, categories, q) {
     const p = new URLSearchParams();
-    params.getAll('products').forEach(v => p.append('products', v));
-    codes.forEach(c => p.append('category', c));
-    if (params.get('q')) p.set('q', params.get('q'));
+    products.forEach(v => p.append('products', v));
+    categories.forEach(v => p.append('category', v));
+    if (q) p.set('q', q);
     const qs = p.toString();
     return qs ? `${path}?${qs}` : path;
   }
-  function storeFull(key, list, total) {
+  function storeFull(q, list, indexEl) {
+    let index = null;
+    try { index = indexEl ? JSON.parse(indexEl.textContent) : null; } catch (error) { index = null; }
+    if (!list || !index) return;
     const copy = list.cloneNode(true);
     copy.removeAttribute('aria-busy');
     copy.querySelectorAll('.is-cut').forEach(card => card.classList.remove('is-cut'));
-    copy.querySelectorAll('.performance-category').forEach(s => { delete s.dataset.rowsCard; delete s.dataset.rowsList; });
-    fullReady.set(key, { list: copy, total });
-    if (fullReady.size > 6) fullReady.delete(fullReady.keys().next().value);
+    copy.querySelectorAll('.performance-category').forEach(section => { delete section.dataset.rowsCard; delete section.dataset.rowsList; });
+    fullReady.set(q, { list: copy, index });
+    root.dataset.quickReady = '1';   // 검사용 표시: 즉시 바꿀 준비가 됐다
+    if (fullReady.size > 4) fullReady.delete(fullReady.keys().next().value);
   }
-  // 지금 화면이 분류 없이 본 전체 목록이면 그대로 담고, 분류를 고른 화면이면 전체 목록을 뒤에서 한 번 받아 둔다.
+  // 지금 화면이 아무것도 안 고른 전체 목록이면 그대로 담고, 아니면 전체 목록을 뒤에서 한 번 받아 둔다.
   function primeFull(url, doc) {
-    const key = baseKey(url);
-    if (fullReady.has(key) || fullPending.has(key)) return;
+    const state = readState(url);
+    if (fullReady.has(state.q) || fullPending.has(state.q)) return;
     const src = doc || root;
-    if (!new URL(url, window.location.href).searchParams.getAll('category').length) {
-      const list = src.querySelector('[data-live-region="list"]');
-      const total = src.querySelector('[data-testid="total-count"]');
-      if (list) storeFull(key, list, total ? total.textContent.trim() : '');
+    if (!state.products.length && !state.categories.length) {
+      storeFull(state.q, src.querySelector('[data-live-region="list"]'), src.querySelector('#count-index'));
       return;
     }
-    fullPending.add(key);
-    const go = () => fetch(categoryUrl(url, []), { credentials: 'same-origin', headers: { Accept: 'text/html' } })
-      .then(r => r.ok ? r.text() : Promise.reject(r.status))
+    fullPending.add(state.q);
+    const go = () => fetch(buildUrl(state.path, [], [], state.q), { credentials: 'same-origin', headers: { Accept: 'text/html' } })
+      .then(response => response.ok ? response.text() : Promise.reject(response.status))
       .then(html => {
-        const page = new DOMParser().parseFromString(html, 'text/html');
-        const list = page.querySelector('[data-performance-page] [data-live-region="list"]');
-        const total = page.querySelector('[data-testid="total-count"]');
-        if (list) storeFull(key, list, total ? total.textContent.trim() : '');
+        const page = new DOMParser().parseFromString(html, 'text/html').querySelector('[data-performance-page]');
+        if (page) storeFull(state.q, page.querySelector('[data-live-region="list"]'), page.querySelector('#count-index'));
       })
       .catch(() => {})
-      .finally(() => fullPending.delete(key));
+      .finally(() => fullPending.delete(state.q));
     if ('requestIdleCallback' in window) requestIdleCallback(go, { timeout: 1500 }); else setTimeout(go, 300);
   }
-  function quickCategory(chip) {
+  function markCard(card, mask) {
+    const box = card.querySelector('.badges');
+    if (!box) return;
+    const marks = Array.from(box.children);
+    marks.forEach(mark => {
+      const on = ((Number(mark.dataset.p) || 0) & mask) !== 0;
+      mark.classList.toggle('is-selected', on);
+      mark.classList.toggle('is-subdued', !on);
+      if (on) mark.title += ' · 선택 제품';
+    });
+    marks.filter(mark => mark.classList.contains('is-subdued')).forEach(mark => box.appendChild(mark));   // 고른 제품 먼저(서버와 같은 순서)
+  }
+  function quickApply(url, focusKey) {
+    const want = readState(url);
+    const now = readState(window.location.href);
+    const full = fullReady.get(want.q);
     const nav = root.querySelector('[data-category-chips]');
-    const url = chip.href;   // 아래에서 칩 주소를 다음 상태로 바꾸므로 누른 순간의 주소를 먼저 잡아 둔다
-    const full = fullReady.get(baseKey(url));
-    if (!nav || !full) return false;
-    const chosen = new URL(url, window.location.href).searchParams.getAll('category');
+    if (want.path !== now.path || want.q !== now.q || !full || !nav) return false;
+    const index = full.index;
+    let mask = 0;
+    for (const id of want.products) {
+      const at = index.products.indexOf(id);
+      if (at < 0) return false;
+      mask |= 1 << at;
+    }
+    const hit = m => !mask || (m & mask) !== 0;
+    const catOn = code => !want.categories.length || want.categories.includes(code);
+    // 숫자: 분류 칸은 분류 선택과 상관없이 각자, 섹션·총수는 고른 분류 안에서(서버와 같은 센 법)
+    const byCat = {}, bySection = {}, privateBySection = {};
+    let total = 0;
+    index.rows.forEach(([section, category, isPublic, m]) => {
+      if (!hit(m)) return;
+      byCat[category] = (byCat[category] || 0) + 1;
+      if (!catOn(category)) return;
+      total += 1;
+      const key = index.sections[section];
+      bySection[key] = (bySection[key] || 0) + 1;
+      if (!isPublic) privateBySection[key] = (privateBySection[key] || 0) + 1;
+    });
+    const collapse = !want.categories.length && !want.q;
     const list = full.list.cloneNode(true);
-    if (chosen.length) {
-      list.querySelectorAll('.performance-category').forEach(section => {
-        if (!chosen.includes(section.dataset.category)) { section.remove(); return; }
-        // 분류를 고르면 다 펼친다(서버와 같게: 접기 버튼·더 보기 줄 없음)
+    let shown = 0;
+    list.querySelectorAll('.performance-category').forEach(section => {
+      if (!catOn(section.dataset.category)) { section.remove(); return; }
+      const key = section.id.replace(/^section-/, '');
+      const count = bySection[key] || 0;
+      const privateCount = privateBySection[key] || 0;
+      const grid = section.querySelector('.performance-grid');
+      let cards = 0;
+      if (grid) grid.querySelectorAll('.customer-card').forEach(card => {
+        if (!hit(Number(card.dataset.pm) || 0)) { card.remove(); return; }
+        cards += 1;
+        if (mask) markCard(card, mask);
+      });
+      if (!cards && !(count && !want.q)) { section.remove(); return; }
+      if (!cards) {
+        // 카드는 없고 숫자만 남은 섹션: 서버와 같은 문구
+        section.querySelectorAll('.performance-grid, [data-more-row]').forEach(node => node.remove());
+        let note = section.querySelector('.category-empty');
+        if (!note) { note = document.createElement('p'); note.className = 'category-empty hint'; section.appendChild(note); }
+        note.textContent = partner && privateCount ? '비공개 고객사는 숫자에만 포함하며 개별 정보는 표시하지 않습니다.' : '집계에 포함되며 목록에는 표시하지 않는 고객사입니다.';
+      }
+      const totalEl = section.querySelector('.category-total');
+      if (totalEl) totalEl.textContent = `${count}곳`;
+      if (partner) {
+        let small = section.querySelector('.category-private-note');
+        if (privateCount) {
+          if (!small) { small = document.createElement('small'); small.className = 'category-private-note'; small.dataset.testid = 'category-private-count'; section.querySelector('.performance-category-heading').appendChild(small); }
+          small.textContent = `비공개 ${privateCount}곳 포함`;
+        } else if (small) small.remove();
+      }
+      if (!collapse) {
         section.classList.remove('is-collapsible');
         section.querySelectorAll('.section-fold, [data-more-row]').forEach(node => node.remove());
-      });
-    }
-    if (!list.querySelector('.performance-category')) return false;   // 빈 화면 문구는 서버가 그린다
+      }
+      shown += 1;
+    });
+    if (!shown) return false;   // 빈 화면 문구는 서버가 그린다
     const view = currentView();
     root.querySelector('[data-view-root]').replaceWith(list);
     viewRoot = list;
     setView(view, false);
-    // 칩 모양·다음에 누를 주소·총 개수를 바로 맞춘다
-    const chips = Array.from(nav.querySelectorAll('[data-category]'));
-    const order = chips.map(c => c.dataset.category);
-    let sum = 0;
-    nav.querySelectorAll('a[data-category]').forEach(c => {
-      const code = c.dataset.category;
-      const on = chosen.includes(code);
-      c.classList.toggle('is-active', on);
-      c.classList.toggle('is-dim', !on && chosen.length > 0);
-      if (on) { c.setAttribute('aria-current', 'true'); c.title = '다시 누르면 선택 해제'; } else { c.removeAttribute('aria-current'); c.removeAttribute('title'); }
-      const next = order.filter(v => (chosen.includes(v)) !== (v === code));
-      c.href = categoryUrl(url, next);
-      if (on) sum += parseInt((c.querySelector('strong') || {}).textContent, 10) || 0;
+    // 분류 칸: 숫자·모양·다음에 누를 주소
+    const labels = Array.from(nav.querySelectorAll('[data-category]'), chip => [chip.dataset.category, chip.querySelector('span').textContent]);
+    const order = labels.map(([code]) => code);
+    const chips = labels.map(([code, label]) => {
+      const count = byCat[code] || 0;
+      const on = want.categories.includes(code);
+      let chip;
+      if (count || on) {
+        chip = document.createElement('a');
+        chip.className = 'category-chip' + (on ? ' is-active' : want.categories.length ? ' is-dim' : '');
+        chip.href = buildUrl(want.path, want.products, order.filter(v => want.categories.includes(v) !== (v === code)), want.q);
+        chip.dataset.category = code;
+        chip.dataset.live = '';
+        chip.dataset.liveKey = `cat-${code}`;
+        if (on) { chip.setAttribute('aria-current', 'true'); chip.title = '다시 누르면 선택 해제'; }
+      } else {
+        chip = document.createElement('span');
+        chip.className = 'category-chip is-empty';
+        chip.dataset.category = code;
+        chip.setAttribute('aria-disabled', 'true');
+        chip.title = '조건에 맞는 고객사가 없습니다';
+      }
+      const name = document.createElement('span');
+      name.textContent = label;
+      const number = document.createElement('strong');
+      number.textContent = String(count);
+      const unit = document.createElement('small');
+      unit.textContent = '곳';
+      number.appendChild(unit);
+      chip.append(name, number);
+      return chip;
     });
-    const total = root.querySelector('[data-testid="total-count"]');
-    if (total) total.textContent = chosen.length ? String(sum) : full.total;
-    const bandCount = root.querySelector('[data-category-band] .band-count');
-    if (bandCount && total) bandCount.textContent = `${total.textContent}곳`;
+    nav.replaceChildren(...chips);
+    const totalEl = root.querySelector('[data-testid="total-count"]');
+    if (totalEl) totalEl.textContent = String(total);
+    // 제품 칩·필터 숫자 배지·폰 필터 체크
+    root.querySelectorAll('[data-live-region="panel-chips"] a.product-chip, [data-live-region="band-chips"] a.product-chip').forEach(chip => {
+      const id = (chip.dataset.liveKey || '').replace(/^(band)?prod-/, '');
+      const on = want.products.includes(id);
+      chip.classList.toggle('is-active', on);
+      if (on) chip.setAttribute('aria-current', 'true'); else chip.removeAttribute('aria-current');
+      chip.href = buildUrl(want.path, on ? want.products.filter(v => v !== id) : [...want.products, id], want.categories, want.q);
+    });
+    ['badge-top', 'band-badge', 'badge-bottom'].forEach(name => {
+      const holder = root.querySelector(`[data-live-region="${name}"]`);
+      if (holder) holder.innerHTML = want.products.length ? `<span class="filter-badge">${want.products.length}</span>` : '';
+    });
+    boxes.forEach(box => { box.checked = want.products.includes(box.value); });
+    paintBoxes();
     history.replaceState({ performanceLive: true }, '', url);
     syncMore();
     syncBand();
-    const focusKey = chip.dataset.liveKey || null;
     const again = focusKey && root.querySelector(`[data-live-key="${focusKey}"]`);
     if (again) again.focus({ preventScroll: true });
     live(url, { push: false, focusKey, keepList: true });
     return true;
   }
   root.addEventListener('click', event => {
-    const modified = event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button;
-    const chip = event.target.closest('[data-category-chips] a[data-category]');
-    if (chip && !modified) {
-      event.preventDefault();
-      if (!quickCategory(chip)) live(chip.href, { focusKey: chip.dataset.liveKey || null });
-      return;
-    }
-    // 분류 칸·제품 칩·조건 해제 칩·모두 해제: 새로고침 없이 바꾼다(새 탭 열기 등 보조키 클릭은 그대로)
+    // 분류 칸·제품 칩·조건 해제 칩·모두 해제: 새로고침 없이 바꾼다(새 탭 열기 등 보조키 클릭은 그대로).
+    // 들고 있는 전체 목록으로 바로 바꿀 수 있으면 즉시, 아니면 서버에서 받아 바꾼다.
     const link = event.target.closest('a[data-live]');
     if (link && !(event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button)) {
       event.preventDefault();
-      live(link.href, { focusKey: link.dataset.liveKey || null });
+      const focusKey = link.dataset.liveKey || null;
+      if (!quickApply(link.href, focusKey)) live(link.href, { focusKey });
       return;
     }
     if (event.target.closest('[data-band-toggle]')) { closeFilter(); toggleIndex(); return; }

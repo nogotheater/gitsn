@@ -158,6 +158,50 @@ class PortalBrowserScenarios(StaticLiveServerTestCase):
             finally:
                 browser.close()
 
+    def test_product_and_category_chips_redraw_at_once_exactly_like_server(self):
+        # 2026-10-22 형우: '제품 필터 누르고 나오는 시간도 딜레이' → 제품 칩도 누르는 순간 바뀐다.
+        # 브라우저가 그 자리에서 다시 그린 화면(숫자·섹션·카드·마킹·칩 주소)이 서버가 새로 그린 화면과 똑같아야 한다.
+        for name, category, products, extra in [('브라우저 중앙 I 기관', 'central', [self.i], {}),
+                                                 ('브라우저 숫자만 금융', 'finance', [self.s], {'show_in_list': False, 'include_in_total': True})]:
+            customer = Customer.objects.create(organization=Organization.objects.create(official_name=name), category=category, partner_public=True, **extra)
+            contract = Contract.objects.create(customer=customer, contracting_party=customer.organization, is_active=True)
+            for product in products:
+                ContractProduct.objects.create(contract=contract, product=product, quantity=1)
+        snapshot = """() => ({
+            url: location.search,
+            total: document.querySelector('[data-testid="total-count"]').textContent.trim(),
+            chips: [...document.querySelectorAll('[data-category-chips] > *')].map(c => [c.tagName, c.className, c.textContent, c.getAttribute('href'), c.getAttribute('aria-current')]),
+            products: [...document.querySelectorAll('[data-live-region="panel-chips"] a, [data-live-region="band-chips"] a')].map(a => [a.className, a.getAttribute('href')]),
+            badge: document.querySelector('[data-live-region="badge-top"]').textContent,
+            sections: [...document.querySelectorAll('.performance-category')].map(s => [s.id, s.className, s.querySelector('.category-total').textContent,
+                (s.querySelector('.category-private-note') || {}).textContent || '', (s.querySelector('.category-empty') || {}).textContent || '',
+                !!s.querySelector('[data-more-row]'), !!s.querySelector('.section-fold'),
+                [...s.querySelectorAll('.customer-card')].map(c => [c.querySelector('h3').textContent,
+                    [...c.querySelectorAll('.product-mark')].map(m => [m.textContent, m.className, m.title])])]),
+        })"""
+        click = "key => { window.__same = 1; document.querySelector(`[data-live-key=\"${key}\"]`).click(); return (" + snapshot + ")(); }"
+        with sync_playwright() as engine:
+            browser = engine.chromium.launch()
+            try:
+                for user in ['browser-employee', 'browser-partner']:
+                    page = browser.new_page(viewport={'width': 1280, 'height': 900})
+                    self.login(page, user)
+                    page.wait_for_url('**/performance/')
+                    steps = [f'prod-{self.i.pk}', 'cat-public', f'prod-{self.s.pk}', f'prod-{self.i.pk}', 'cat-public', f'prod-{self.s.pk}']
+                    for key in steps:
+                        page.wait_for_selector('[data-performance-page][data-quick-ready]', state='attached')
+                        page.wait_for_load_state('networkidle')
+                        before = page.evaluate('location.search')
+                        quick = page.evaluate(click, key)
+                        self.assertNotEqual(quick['url'], before, (user, key))   # 클릭한 그 순간 이미 바뀌었다
+                        page.wait_for_load_state('networkidle')
+                        self.assertEqual(page.evaluate('window.__same'), 1)   # 새로고침 없이
+                        page.reload()
+                        self.assertEqual(page.evaluate(snapshot), quick, (user, key))
+                    page.close()
+            finally:
+                browser.close()
+
     def test_tabs_search_views_and_mobile_sheet_keep_server_state_and_counts(self):
         for index in range(30):
             customer = Customer.objects.create(organization=Organization.objects.create(official_name=f'스크롤 가상 기관 {index:02}'), category='public', partner_public=True)

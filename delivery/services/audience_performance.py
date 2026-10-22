@@ -23,7 +23,7 @@ def _badge(row):
     return ProductBadge(str(row['product_id']), row['product_name'], row['marker'], row['color'])
 
 
-def current_performance_payload(user, *, selected_product_ids=(), categories=(), visibility='all', include_badges=True):
+def current_performance_payload(user, *, selected_product_ids=(), categories=(), visibility='all', include_badges=True, with_index=False):
     """Any selected product and any selected category match (both OR); empty means no restriction."""
     audience = audience_for_user(user)
     try:
@@ -89,7 +89,33 @@ def current_performance_payload(user, *, selected_product_ids=(), categories=(),
                 **{**row, 'id': str(row['id'])}, kind=kind, name=name,
                 has_logo=has_logo, products=products,
             ))
-    return project_targets(records, audience=audience, category_codes=Category.values)
+    payload = project_targets(records, audience=audience, category_codes=Category.values)
+    if with_index:
+        payload['index'] = _count_index(customer_rows, site_rows)
+    return payload
+
+
+def _count_index(customer_rows, site_rows):
+    """Counted targets only: (category, region, partner_public, product ids). No names, logos or ids.
+
+    The browser uses this to recount instantly when product/category chips change (2026-10-22 형우: 속도).
+    The same numbers are already available to the viewer by choosing chips, so nothing new is revealed.
+    """
+    counted_customers = {row['id']: row for row in customer_rows if row['include_in_total']}
+    counted_sites = {row['id']: row for row in site_rows if row['include_in_total']}
+    products = defaultdict(set)
+    for target, product in ContractProduct.objects.filter(
+        contract__is_active=True, contract__customer_id__in=list(counted_customers),
+    ).values_list('contract__customer_id', 'product_id'):
+        products[('customer', target)].add(str(product))
+    for target, product in SiteProductSelection.objects.filter(
+        contract_site__contract__is_active=True,
+        contract_product__contract_id=F('contract_site__contract_id'),
+        contract_site__site__presentation__id__in=list(counted_sites),
+    ).values_list('contract_site__site__presentation__id', 'contract_product__product_id'):
+        products[('site', target)].add(str(product))
+    return [(row['category'], row['region'] or '', row['partner_public'], frozenset(products[(kind, key)]))
+            for kind, rows in (('customer', counted_customers), ('site', counted_sites)) for key, row in rows.items()]
 
 
 def contract_source_metadata(user, contract_id):
