@@ -1,0 +1,8 @@
+/* 고객사 소재지·기관 유형 입력(4단계). 고객사 등록·수정 화면에서만 불러온다. */
+.location-fields{margin-top:4px}
+.location-fields #id_institution_type{display:flex;flex-wrap:wrap;gap:4px 24px}
+.location-fields #id_institution_type label{display:flex;align-items:center;gap:8px;min-height:44px;font-size:15px;cursor:pointer}
+.location-fields #id_institution_type input{appearance:auto;width:18px;height:18px;margin:0;accent-color:var(--brand-action)}
+.location-hint{margin:-8px 0 16px;padding:10px 14px;border-radius:4px;background:var(--brand-tint);color:var(--brand-hover);font-size:14px}
+.location-hint .location-apply{min-height:32px;padding:4px 10px;margin-left:4px}
+.location-fields select:disabled{background:var(--surface-disabled);color:var(--text-disabled)}

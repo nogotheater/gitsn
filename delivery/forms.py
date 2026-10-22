@@ -6,8 +6,9 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.forms import BaseFormSet, formset_factory
 from .domain.duplicates import ContractMergeDecision
 from .domain.quantities import positive_quantity
-from .models import Category, Region, DisplayKind, Organization, Customer, Contract, InstallationSite, Product
+from .models import Category, Region, DisplayKind, InstitutionType, Organization, Customer, Contract, InstallationSite, Product
 from .services.access import require_manager
+from .services.customer_location import LOCATION_CATEGORIES, REGION_OF_SIDO, join_location, sido_choices, unit_choices, unit_in_sido
 
 VISIBILITY = [('default', '분류 기본값 따르기'), ('public', '파트너사 공개'), ('private', '파트너사 비공개')]
 
@@ -54,9 +55,40 @@ class PresentationForm(forms.Form):
     memo = forms.CharField(label='참고 메모', required=False, widget=forms.Textarea(attrs={'rows': 3}))
     remove_logo = forms.BooleanField(label='기존 심볼 삭제', required=False)
     revision = forms.CharField(required=False, widget=forms.HiddenInput)
+    # 4단계(2026-10-22): 고객사 화면에서만 쓴다(with_location=True). 설치 장소·중복 통합 화면에는 없다.
+    location_sido = forms.ChoiceField(label='소재지 시·도', required=False, choices=())
+    location_unit = forms.ChoiceField(label='소재지 시군구', required=False, choices=())
+    institution_type = forms.ChoiceField(label='기관 유형', required=False, choices=InstitutionType.choices,
+                                         widget=forms.RadioSelect,
+                                         help_text='행정기관은 지도에서 그 시군구 면을 칠하고, 시설·공기업은 점으로만 표시합니다.')
+
+    def __init__(self, *args, with_location=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.with_location = with_location
+        if with_location:
+            self.fields['location_sido'].choices = sido_choices()
+            self.fields['location_unit'].choices = unit_choices()
+        else:
+            for name in ('location_sido', 'location_unit', 'institution_type'):
+                del self.fields[name]
 
     def clean(self):
         data = super().clean()
+        if self.with_location and data.get('category') in LOCATION_CATEGORIES:
+            sido, unit = data.get('location_sido', ''), data.get('location_unit', '')
+            if unit and not unit_in_sido(unit, sido):
+                self.add_error('location_unit', '선택한 시·도 안의 시군구를 골라 주세요.')
+            else:
+                code = join_location(sido, unit)
+                data['location_managed'] = True
+                data['location_code'] = code
+                if not code:
+                    data['institution_type'] = ''
+                elif not data.get('institution_type'):
+                    self.add_error('institution_type', '기관 유형을 선택해 주세요.')
+                # 소재지를 고르면 지역(권역)은 소재지를 따른다. 제주는 권역이 없어 고른 지역을 그대로 둔다.
+                if REGION_OF_SIDO.get(sido):
+                    data['region'] = REGION_OF_SIDO[sido]
         if data.get('category') in {Category.LOCAL, Category.COUNCIL} and not data.get('region'):
             self.add_error('region', '지방자치단체·의회는 지역을 선택해 주세요.')
         if data.get('remove_logo') and data.get('logo'):

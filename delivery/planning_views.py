@@ -6,17 +6,20 @@ from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db import DatabaseError
 from django.db.models import Prefetch
-from django.http import FileResponse, Http404
+from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.cache import never_cache
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_GET, require_http_methods
 from .forms import PresentationForm, ContractForm, ProductFormSet, SiteFormSet, ProductCatalogForm, DuplicateSearchForm, DuplicateContractFormSet
 from .models import Customer, Contract, Category, DisplayKind, SitePresentation, InstallationSite, Product
 from .services.access import require_manager
 from .services.planning import save_presentation, save_contract, end_contract, save_product, delete_product
 from .services.current_performance import customer_current_quantities
 from .services.duplicates import duplicate_candidates, merge_duplicate_customers
+from .services.customer_location import LOCATION_CATEGORIES, location_data, split_location, suggestion
+from .services.customer_delete import deletion_plan, delete_customer
+from .domain.locations import format_location
 
 
 def planning_only(view):
@@ -57,6 +60,7 @@ def customer_list(request):
     for customer in page:
         badges = {line.product_id: line.product for contract in customer.current_contracts for line in contract.product_lines.all()}
         customer.product_badges = sorted(badges.values(), key=lambda product: product.name)
+        customer.needs_location = customer.category in LOCATION_CATEGORIES and not customer.location_code
     return render(request, 'planning/customer_list.html', {'page': page, 'query': query, 'selected_category': category, 'categories': Category.choices})
 
 
@@ -74,7 +78,10 @@ def customer_edit(request, customer_id=None):
         messages.error(request, '이미 통합된 고객사입니다. 유지된 고객사에서 수정해 주세요.')
         return redirect('planning-customer-detail', customer_id=customer.merged_into_id)
     initial = presentation_initial(customer, str(customer)) if customer else {'display_as': DisplayKind.CUSTOMER, 'official_name': request.GET.get('name', '')}
-    form = PresentationForm(request.POST if request.method == 'POST' else None, request.FILES or None, initial=initial)
+    if customer:
+        sido, unit = split_location(customer.location_code)
+        initial.update({'location_sido': sido, 'location_unit': unit, 'institution_type': customer.institution_type})
+    form = PresentationForm(request.POST if request.method == 'POST' else None, request.FILES or None, initial=initial, with_location=True)
     if request.method == 'POST' and form.is_valid():
         try:
             saved = save_presentation(request.user, form.cleaned_data, customer_id=customer_id)
@@ -83,7 +90,8 @@ def customer_edit(request, customer_id=None):
         else:
             messages.success(request, '고객사 정보를 저장했습니다.')
             return redirect('planning-customer-detail', customer_id=saved.pk)
-    return render(request, 'planning/presentation_form.html', {'form': form, 'customer': customer, 'presentation': customer, 'is_site': False})
+    return render(request, 'planning/presentation_form.html', {'form': form, 'customer': customer, 'presentation': customer, 'is_site': False,
+                                                               'location_data': location_data()})
 
 
 @planning_only
@@ -97,7 +105,35 @@ def customer_detail(request, customer_id):
     contracts = customer.contracts.select_related('contracting_party', 'superseded_by__customer__organization').prefetch_related('product_lines__product', 'site_links__site').order_by('-created_at')
     merged_duplicates = customer.merged_duplicates.select_related('organization').order_by('-merged_at')
     return render(request, 'planning/customer_detail.html', {'customer': customer, 'contracts': contracts, 'totals': totals,
-                                                             'total_quantity': sum(quantities.values()), 'merged_duplicates': merged_duplicates})
+                                                             'total_quantity': sum(quantities.values()), 'merged_duplicates': merged_duplicates,
+                                                             'location_applies': customer.category in LOCATION_CATEGORIES,
+                                                             'location_label': format_location(customer.location_code)})
+
+
+@planning_only
+@require_http_methods(['GET', 'POST'])
+def customer_delete(request, customer_id):
+    """고객사 삭제(2026-10-22 형우): 계약이 있어도 지운다. GET은 확인 화면, POST가 삭제."""
+    customer = get_object_or_404(Customer.objects.select_related('organization'), pk=customer_id)
+    if request.method == 'POST':
+        try:
+            result = delete_customer(request.user, customer.pk)
+        except ValidationError as failure:
+            messages.error(request, ' '.join(failure.messages))
+        except DatabaseError:
+            messages.error(request, '고객사를 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.')
+        else:
+            messages.success(request, f'"{result["name"]}" 고객사를 삭제했습니다.')
+            return redirect('planning-home')
+        return redirect('planning-customer-detail', customer_id=customer.pk)
+    return render(request, 'planning/customer_delete.html', {'customer': customer, 'plan': deletion_plan(customer)})
+
+
+@planning_only
+@require_GET
+def location_guess(request):
+    """고객사 화면의 소재지 제안(4단계). 관리자 전용, 읽기만 한다."""
+    return JsonResponse(suggestion(request.GET.get('name', ''), request.GET.get('category', ''), request.GET.get('region', '')))
 
 
 def contract_initial(contract, customer):

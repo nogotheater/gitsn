@@ -87,6 +87,10 @@ def save_presentation(user, data, *, customer_id=None, site_id=None, extra_name_
                 owner.save()
             previous_logo = obj.logo.name
             _settings(obj, data)
+            # 4단계: 지자체·의회 화면에서 고른 소재지·기관 유형. 다른 분류·화면에서는 기존 값을 그대로 둔다.
+            if not site_id and data.get('location_managed'):
+                obj.location_code = data.get('location_code', '')
+                obj.institution_type = data.get('institution_type', '')
             if uploaded:
                 extension = '.png' if uploaded.image.format == 'PNG' else '.jpg'
                 uploaded.name = uuid4().hex + extension
