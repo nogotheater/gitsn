@@ -1,5 +1,6 @@
 """Authorized output projection; same document is used for print and PDF."""
 import base64
+from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 from PIL import Image, ImageOps
@@ -54,8 +55,8 @@ def print_document(user, cleaned, scope):
     logos = {}
     for kind, model in [('customer', Customer), ('site', SitePresentation)]:
         ids = [item['id'] for item in items if item['kind'] == kind and item['has_logo']]
-        for obj in model.objects.filter(pk__in=ids).only('id', 'logo'):
-            logos[(kind, str(obj.pk))] = logo_data(obj.logo)
+        for obj in model.objects.filter(pk__in=ids).only('id', 'logo', 'updated_at'):
+            logos[(kind, str(obj.pk))] = cached_logo_data(obj)
     groups, totals = [], []
     for code, label in Category.choices:
         count = payload['counts']['by_category'][code]
@@ -91,12 +92,36 @@ def print_document(user, cleaned, scope):
             'date': timezone.localdate(), 'is_partner': audience == 'partner'}
 
 
+@lru_cache(maxsize=16)
+def _asset(path, mtime, encode):
+    data = Path(path).read_bytes()
+    return base64.b64encode(data).decode('ascii') if encode else data.decode('utf-8')
+
+
+def _cached(path, encode=False):
+    # 파일이 바뀌면(수정 시각) 다시 읽고, 아니면 메모리에 둔 것을 쓴다(2026-10-22, 글꼴 7MB를 매번 읽지 않게).
+    return _asset(str(path), path.stat().st_mtime_ns, encode)
+
+
 def document_assets():
     root = Path(settings.BASE_DIR) / 'static/delivery'
-    return {'print_css': (root / 'print.css').read_text(),
-            'print_layout_js': (root / 'print-layout.js').read_text(),
-            'print_font': base64.b64encode((root / 'fonts/FreesentationVF.ttf').read_bytes()).decode('ascii'),
-            'brand_logo': base64.b64encode((root / 'img/logo.png').read_bytes()).decode('ascii')}
+    return {'print_css': _cached(root / 'print.css'),
+            'print_layout_js': _cached(root / 'print-layout.js'),
+            'print_font': _cached(root / 'fonts/FreesentationVF.ttf', encode=True),
+            'brand_logo': _cached(root / 'img/logo.png', encode=True)}
+
+
+_LOGO_CACHE = {}
+
+
+def cached_logo_data(obj):
+    """인쇄용 로고(작게 줄인 PNG base64). (파일 이름, 수정 시각)이 같으면 다시 받지·줄이지 않는다(2026-10-22)."""
+    key = (obj.logo.name, getattr(obj, 'updated_at', None))
+    if key not in _LOGO_CACHE:
+        if len(_LOGO_CACHE) > 1000:
+            _LOGO_CACHE.clear()
+        _LOGO_CACHE[key] = logo_data(obj.logo)
+    return _LOGO_CACHE[key]
 
 
 def render_pdf(html):

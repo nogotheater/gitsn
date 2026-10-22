@@ -54,7 +54,7 @@ def basis_date():
     return timezone.localdate(latest) if latest else None
 
 
-def region_map_payload(show_unassigned=True):
+def _region_map_payload(show_unassigned=True):
     """화면에 넘길 데이터. 네 조합을 한 번에 만들어 전환할 때 서버를 다시 부르지 않게 한다."""
     combos = {}
     for tkey, category, _label in TARGETS:
@@ -77,3 +77,29 @@ def region_map_payload(show_unassigned=True):
         'units': {c: {'name': n, 'sido': s, 'whole': w, 'lp': UNIT_LABEL.get(c)} for c, n, s, w in aa.UNITS},
         'combos': combos,
     }
+
+
+_PAYLOAD_CACHE = {}
+
+
+def _data_signature():
+    """고객사·계약·제품 줄이 바뀌면 달라지는 값(가벼운 질의 3개)."""
+    from django.db.models import Count, Max
+    from delivery.models import Organization
+    return (tuple(Customer.objects.aggregate(Max('updated_at'), Count('id')).values()),
+            tuple(Organization.objects.aggregate(Max('updated_at'), Count('id')).values()),
+            tuple(Contract.objects.aggregate(Max('updated_at'), Count('id')).values()),
+            tuple(ContractProduct.objects.aggregate(Max('updated_at'), Count('id')).values()))
+
+
+def region_map_payload(show_unassigned=True):
+    """지역 현황 데이터. 인터넷 서버에서는 자료가 그대로면 계산해 둔 것을 다시 쓴다(2026-10-22, 속도). PC·검사는 매번 계산."""
+    import os
+    if not os.environ.get('RENDER_EXTERNAL_HOSTNAME'):
+        return _region_map_payload(show_unassigned)
+    key = (show_unassigned, _data_signature(), aa.BOUNDARY_VERSION)
+    if key not in _PAYLOAD_CACHE:
+        if len(_PAYLOAD_CACHE) > 8:
+            _PAYLOAD_CACHE.clear()
+        _PAYLOAD_CACHE[key] = _region_map_payload(show_unassigned)
+    return _PAYLOAD_CACHE[key]
