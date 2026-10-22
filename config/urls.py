@@ -17,6 +17,7 @@ urlpatterns = [
     path("performance/customers/<uuid:customer_id>/", portal.customer_detail, name="employee-customer"),
     path("performance/contracts/<uuid:contract_id>/", portal.contract_detail, name="employee-contract"),
     path("performance/places/<uuid:presentation_id>/", portal.site_detail, name="employee-site"),
+    path("performance/logos.css", portal.logo_stylesheet, name="performance-logo-css"),
     path("performance/logos/<str:kind>/<uuid:object_id>/", portal.logo, name="performance-logo"),
     path("planning/accounts/", portal.account_list, name="accounts"),
     path("planning/accounts/new/", portal.account_new, name="account-new"),

@@ -173,3 +173,20 @@ class UserAccessProfile(IdentifiedRecord):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="delivery_access")
     audience = models.CharField(max_length=16, choices=Audience.choices)
     # Planning-team management uses Django's manage_delivery permission, not another audience.
+
+
+class LogoRendition(models.Model):
+    """심볼을 미리 줄여 둔 사본(2026-10-22, 속도). 원본은 저장소(logo 필드)에 그대로 있다.
+
+    web: 납품현황 카드용 작은 WebP(128px 안). print_png: 인쇄·PDF용 PNG(480×240 안, 기존과 같은 크기).
+    source: 어떤 원본 파일로 만들었는지. 원본이 바뀌면(파일 이름이 달라지면) 다시 만든다.
+    """
+    kind = models.CharField(max_length=16)
+    object_id = models.UUIDField()
+    source = models.CharField(max_length=255)
+    web = models.BinaryField(blank=True, default=b"")
+    print_png = models.BinaryField(blank=True, default=b"")
+    created_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["kind", "object_id"], name="logo_rendition_target")]

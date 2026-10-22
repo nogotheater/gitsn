@@ -242,6 +242,53 @@ class PortalHttpScenarios(TestCase):
         self.client.force_login(self.employee)
         self.assertEqual(self.client.get('/performance/').status_code, 302)
 
+    def test_logo_bundle_is_one_stylesheet_with_same_policy_and_long_cache_for_employees(self):
+        # 2026-10-22 형우: '로고 뜨는 것도 오래 걸린다' → 카드마다 따로 받던 심볼(97번)을 스타일 파일 하나로.
+        from delivery.models import LogoRendition
+        from delivery.services.logo_renditions import logo_class
+        self.public.logo.save('public.png', image_upload())
+        self.secret.logo.save('secret.png', image_upload())
+        public_class, secret_class = logo_class(self.public.pk), logo_class(self.secret.pk)
+        self.client.force_login(self.employee)
+        page = self.client.get('/performance/').content.decode()
+        self.assertNotIn('/performance/logos/customer/', page)   # 카드는 더 이상 한 장씩 받지 않는다
+        self.assertIn(f'symbol {public_class}', page)
+        css_url = page.split('href="/performance/logos.css?v=')[1].split('"')[0]
+        response = self.client.get('/performance/logos.css', {'v': css_url})
+        body = response.content.decode()
+        self.assertEqual(response['Content-Type'], 'text/css; charset=utf-8')
+        self.assertIn('immutable', response['Cache-Control'])
+        self.assertIn('private', response['Cache-Control'])
+        self.assertIn(f'.{public_class}{{background:#fff url(data:image/webp;base64,', body)
+        self.assertIn(f'.{secret_class}{{', body)
+        for value in ['public.png', 'secret.png', '/media/']:
+            self.assertNotIn(value, body)
+        self.assertEqual(LogoRendition.objects.filter(object_id__in=[self.public.pk, self.secret.pk]).count(), 2)
+        # 판 번호가 다르면(옛 주소) 오래 보관하지 않는다
+        self.assertIn('no-cache', self.client.get('/performance/logos.css', {'v': 'old'})['Cache-Control'])
+        # 파트너사: 목록 표시·공개 고객사만, 저장 안 함(한 장씩 받던 때와 같은 정책)
+        self.client.force_login(self.partner)
+        response = self.client.get('/performance/logos.css')
+        body = response.content.decode()
+        self.assertIn('no-store', response['Cache-Control'])
+        self.assertIn(f'.{public_class}{{', body)
+        self.assertNotIn(secret_class, body)
+        self.assertNotIn(secret_class, self.client.get('/performance/').content.decode())
+        self.public.partner_public = False
+        self.public.save()
+        self.assertNotIn(public_class, self.client.get('/performance/logos.css').content.decode())
+        # 심볼을 바꾸면 판 번호가 바뀌고 사본도 새로 만든다
+        self.client.force_login(self.employee)
+        before = self.client.get('/performance/').content.decode().split('logos.css?v=')[1].split('"')[0]
+        old_source = LogoRendition.objects.get(object_id=self.public.pk).source
+        self.public.logo.save('public-new.png', image_upload('JPEG', 'public-new.jpg'))
+        after = self.client.get('/performance/').content.decode().split('logos.css?v=')[1].split('"')[0]
+        self.assertNotEqual(before, after)
+        self.client.get('/performance/logos.css', {'v': after})
+        self.assertNotEqual(LogoRendition.objects.get(object_id=self.public.pk).source, old_source)
+        self.client.logout()
+        self.assertEqual(self.client.get('/performance/logos.css').status_code, 302)
+
     def test_logos_follow_current_public_policy_and_hide_file_paths(self):
         self.public.logo.save('public.png', image_upload())
         self.secret.logo.save('secret.png', image_upload())

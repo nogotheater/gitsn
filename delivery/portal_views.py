@@ -8,7 +8,7 @@ from django.contrib.auth.views import LoginView
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db import DatabaseError
-from django.http import FileResponse, Http404, QueryDict
+from django.http import FileResponse, Http404, HttpResponse, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.cache import never_cache
@@ -16,6 +16,7 @@ from django.utils.cache import add_never_cache_headers, patch_cache_control
 from django.views.decorators.http import require_GET, require_http_methods
 from .services.list_order import item_order_key
 from .services.logo_cache import logo_bytes
+from .services.logo_renditions import logo_class, logo_css, logo_signature
 from .domain.products import product_sort_key
 from .templatetags.delivery_display import badge_color
 from .models import Category, Region, DisplayKind, Customer, Contract, SitePresentation, Product
@@ -97,13 +98,12 @@ def performance(request):
     # 카드 주소·로고 주소·마킹 색은 여기서 한 번에 만든다 — 504장을 그릴 때 템플릿이 매번 계산하지 않게(2026-10-22, 속도)
     zero = '00000000-0000-0000-0000-000000000000'
     detail_base = {'customer': reverse('employee-customer', args=[zero]), 'site': reverse('employee-site', args=[zero])}
-    logo_base = {kind: reverse('performance-logo', args=[kind, zero]) for kind in detail_base}
     catalog = form.product_catalog()
     product_bit = {product['id']: 1 << index for index, product in enumerate(catalog)} if len(catalog) <= 30 else {}
     for item in items:
         item['pm'] = sum(product_bit.get(product['id'], 0) for product in item['products'])
         item['detail_url'] = detail_base[item['kind']].replace(zero, item['id'])
-        item['logo_url'] = logo_base[item['kind']].replace(zero, item['id']) if item['has_logo'] else ''
+        item['logo_class'] = logo_class(item['id']) if item['has_logo'] else ''
         item['initial'] = item['name'][:1]
         item['category_label'] = Category(item['category']).label
         item['region_label'] = Region(item['region']).label if item['region'] else ''
@@ -180,7 +180,8 @@ def performance(request):
         'selected_category_labels': [label for code, label in Category.choices if code in categories],
         'show_category_strip': valid, 'product_chips': product_chips,
         'active_products': [chip for chip in product_chips if chip['active']],
-        'is_partner': audience == 'partner', 'filters_valid': valid, 'count_index': count_index}, status=200 if valid else 400)
+        'is_partner': audience == 'partner', 'filters_valid': valid, 'count_index': count_index,
+        'logo_css_url': reverse('performance-logo-css') + '?v=' + logo_signature(audience)}, status=200 if valid else 400)
 
 
 @employee_only
@@ -214,6 +215,22 @@ def site_detail(request, presentation_id):
     contracts = Contract.objects.filter(site_links__site=presentation.site).select_related('customer__organization', 'contracting_party').defer(
         'source_email_subject', 'source_email_sender', 'source_email_received_on').distinct().order_by('-created_at')
     return render(request, 'portal/site_detail.html', {'presentation': presentation, 'contracts': contracts})
+
+
+@login_required
+@require_GET
+def logo_stylesheet(request):
+    """그 사람이 볼 수 있는 심볼 전부를 스타일 파일 하나로(2026-10-22, 속도: 카드마다 따로 받던 97번 → 1번)."""
+    audience = audience_for_user(request.user)
+    version, body = logo_css(audience)
+    response = HttpResponse(body, content_type='text/css; charset=utf-8')
+    response['X-Content-Type-Options'] = 'nosniff'
+    if audience == 'partner' or request.GET.get('v') != version:
+        add_never_cache_headers(response)   # 파트너사는 공개 정책이 바뀌면 바로 따라야 해서 저장하지 않는다(한 장씩 받던 때와 같다)
+    else:
+        # 직원: 판 번호가 주소에 들어 있어 심볼이 바뀌면 주소가 바뀐다 → 이 기기에 오래 보관
+        patch_cache_control(response, private=True, max_age=365 * 24 * 3600, immutable=True)
+    return response
 
 
 @login_required

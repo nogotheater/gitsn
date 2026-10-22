@@ -50,7 +50,9 @@ class OverviewProjectionScenarios(SimpleTestCase):
         request = RequestFactory().get('/performance/', query or {})
         request.user = user
         payload = project_targets(records, audience=audience, category_codes=Category.values)
-        with patch('delivery.portal_views.PerformanceFilterForm', ProjectionFilterForm), patch('delivery.portal_views.current_performance_payload', return_value=deepcopy(payload)):
+        # 2026-10-22: 심볼 묶음 판 번호(logo_signature)는 DB를 읽으므로, 자료(payload)처럼 이 화면 검사에서는 정해진 값으로 둔다.
+        with patch('delivery.portal_views.PerformanceFilterForm', ProjectionFilterForm), patch('delivery.portal_views.current_performance_payload', return_value=deepcopy(payload)), \
+                patch('delivery.portal_views.logo_signature', return_value='projection-test'):
             return performance(request)
 
     def record(self, index, category='public', public=True, counted=True):

@@ -11,6 +11,7 @@ from .list_order import item_order_key
 from delivery.domain.products import product_sort_key, short_and_long
 from delivery.models import Category, Customer, SitePresentation
 from .access import audience_for_user
+from .logo_renditions import renditions
 from .audience_performance import current_performance_payload
 from .sections import section_of, sections as list_sections
 
@@ -52,11 +53,24 @@ def print_document(user, cleaned, scope):
                categories=categories, visibility=scope, include_badges=False)
     items = payload['items']
     # Query logo files only for the already authorized, filtered visible items.
-    logos = {}
+    # 심볼은 미리 줄여 둔 사본(LogoRendition)에서 — 저장소에서 하나씩 받던 것이 서버가 깬 직후 25초 걸렸다(2026-10-22, 속도)
+    logos, missing = {}, []
     for kind, model in [('customer', Customer), ('site', SitePresentation)]:
         ids = [item['id'] for item in items if item['kind'] == kind and item['has_logo']]
         for obj in model.objects.filter(pk__in=ids).only('id', 'logo', 'updated_at'):
-            logos[(kind, str(obj.pk))] = cached_logo_data(obj)
+            key = (kind, str(obj.pk), obj.logo.name)
+            if key in _LOGO_CACHE:
+                logos[key[:2]] = _LOGO_CACHE[key]
+            else:
+                missing.append((kind, obj))
+    if missing:
+        if len(_LOGO_CACHE) > 1000:
+            _LOGO_CACHE.clear()
+        for (kind, object_id), row in renditions(missing, need='print_png').items():
+            data = bytes(row.print_png)
+            value = 'data:image/png;base64,' + base64.b64encode(data).decode('ascii') if data else ''
+            _LOGO_CACHE[(kind, object_id, row.source)] = value
+            logos[(kind, object_id)] = value
     groups, totals = [], []
     for code, label in Category.choices:
         count = payload['counts']['by_category'][code]
@@ -114,14 +128,7 @@ def document_assets():
 _LOGO_CACHE = {}
 
 
-def cached_logo_data(obj):
-    """인쇄용 로고(작게 줄인 PNG base64). (파일 이름, 수정 시각)이 같으면 다시 받지·줄이지 않는다(2026-10-22)."""
-    key = (obj.logo.name, getattr(obj, 'updated_at', None))
-    if key not in _LOGO_CACHE:
-        if len(_LOGO_CACHE) > 1000:
-            _LOGO_CACHE.clear()
-        _LOGO_CACHE[key] = logo_data(obj.logo)
-    return _LOGO_CACHE[key]
+# 인쇄용 심볼 data URI를 서버 메모리에: 키는 (종류, id, 원본 파일 이름)
 
 
 def render_pdf(html):
