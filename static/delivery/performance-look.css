@@ -147,8 +147,11 @@
   .performance-page .performance-grid>.customer-card.is-cut{display:none}
   .performance-page .section-more{display:flex;align-items:center;justify-content:center;width:100%;min-height:44px;margin-top:12px;border:1px solid var(--look-glass-line);border-radius:var(--look-radius-2);background:var(--look-cell);color:var(--look-in-strong);font:inherit;font-size:14px;font-weight:600;cursor:pointer;appearance:none}
   .performance-page .section-more:hover{background:#fff}
+  .performance-page .section-more-row{display:flex;gap:8px;margin-top:12px}
+  .performance-page .section-more-row>.section-more{margin-top:0;flex:1 1 auto;min-width:0}
+  .performance-page .section-more-row>.section-more-fold{flex:0 0 auto;width:auto;min-width:96px;padding:0 18px}
   /* 2026-10-22 형우: 리스트 보기도 전체 보기에서는 섹션마다 5줄만 */
-  .performance-page .section-fold{margin-left:auto;min-height:32px;padding:4px 10px;border:0;border-radius:var(--look-radius-3);background:transparent;color:var(--look-in-strong);font:inherit;font-size:13px;font-weight:600;cursor:pointer;appearance:none}
+  .performance-page .section-fold{display:inline-flex;align-items:center;margin-left:auto;min-height:32px;padding:4px 10px;border:0;border-radius:var(--look-radius-3);background:transparent;color:var(--look-in-strong);font:inherit;font-size:14px;font-weight:600;cursor:pointer;appearance:none}
   .performance-page .section-fold:hover{background:var(--look-wash)}
   .performance-page .band-panel li+li{border-top:1px solid var(--look-hair)}
   .performance-page .band-panel-regions{display:flex;flex-wrap:wrap;gap:6px;padding:2px 12px 10px}
@@ -255,4 +258,9 @@
   .performance-page .view-card .performance-grid .customer-card .symbol{width:40px;height:40px;font-size:16px}
   .performance-page .view-card .performance-grid .customer-card h3{font-size:15px;line-height:1.35;min-height:calc(2 * 1.35em);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
   .performance-page .view-card .performance-grid .customer-card>p.muted{display:none}
+}
+/* 더 보기·접기 화살표(2026-10-22 형우): 글자 기호(▾▴)는 글꼴마다 크기가 달라 CSS로 같은 꺾쇠를 그린다. 글꼴은 모두 14px·600. */
+@media screen{
+  .performance-page .section-more::after,.performance-page .section-fold::after{content:"";display:inline-block;flex:0 0 auto;width:6px;height:6px;margin-left:8px;border-right:1.75px solid currentColor;border-bottom:1.75px solid currentColor;transform:translateY(-2px) rotate(45deg)}
+  .performance-page .section-more[data-dir="up"]::after,.performance-page .section-fold[data-dir="up"]::after{transform:translateY(2px) rotate(-135deg)}
 }

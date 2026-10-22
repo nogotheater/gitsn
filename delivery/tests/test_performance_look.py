@@ -162,11 +162,11 @@ class PerformanceLookBrowser(StaticLiveServerTestCase):
                 # 섹션 접기: 1280px은 한 줄 4개 → 두 줄 8개만. '모두 보기 ▾' ↔ '접기 ▴'(2026-10-22 형우)
                 visible = lambda: page.locator('#section-public .customer-card').evaluate_all('cs => cs.filter(c => c.offsetParent).length')
                 more = page.locator('#section-public [data-section-more]')
-                expect(more).to_have_text('더 보기 ▾')
+                expect(more).to_have_text('더 보기')
                 self.assertEqual(visible(), 8)
                 more.click()   # 두 줄씩 더(12개라 다 보임)
-                expect(more).to_have_text('접기 ▴')
-                expect(page.locator('#section-public [data-section-fold]')).to_be_visible()
+                expect(more).to_have_text('접기')
+                expect(page.locator('#section-public .section-fold')).to_be_visible()
                 self.assertEqual(visible(), 12)
                 # 섹션 바로가기: 띠의 '목차 ▾' → 분류 줄(지자체·의회는 권역 칩) → 섹션으로 이동
                 page.evaluate('window.scrollTo(0, document.documentElement.scrollHeight)')
@@ -182,8 +182,8 @@ class PerformanceLookBrowser(StaticLiveServerTestCase):
                 expect(panel).to_be_hidden()
                 page.wait_for_function('Math.abs(document.getElementById("section-public").getBoundingClientRect().top - 72) < 6')
                 # 제목 옆 '접기 ▴'로 다시 두 줄
-                page.locator('#section-public [data-section-fold]').click()
-                expect(more).to_have_text('더 보기 ▾')
+                page.locator('#section-public .section-fold').click()
+                expect(more).to_have_text('더 보기')
                 self.assertEqual(visible(), 8)
 
                 # 폰: ☰ 한 줄, 제목 축약, 누르는 곳 44px, 가로 스크롤 없음.
@@ -194,10 +194,10 @@ class PerformanceLookBrowser(StaticLiveServerTestCase):
                 # 폰 리스트(2026-10-22 형우): 전체 보기에서 섹션마다 5줄, 한 줄 배치, ↑ 동그라미
                 self.assertTrue(page.locator('[data-view-root]').evaluate("el => el.classList.contains('view-list')"))
                 self.assertEqual(visible(), 5)
-                expect(more).to_have_text('더 보기 ▾')
+                expect(more).to_have_text('더 보기')
                 more.click()   # 리스트는 열 줄씩 더(12개라 다 보임)
                 self.assertEqual(visible(), 12)
-                expect(more).to_have_text('접기 ▴')
+                expect(more).to_have_text('접기')
                 row = page.locator('#section-public .customer-card').first.bounding_box()
                 self.assertLess(row['height'], 56)
                 expect(page.locator('.section-label')).to_have_count(0)   # 2026-10-22 형우: '표시 목록 N개' 줄 삭제

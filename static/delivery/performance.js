@@ -453,7 +453,9 @@
   function syncMore() {
     root.querySelectorAll('.performance-category.is-collapsible').forEach(section => {
       const more = section.querySelector('[data-section-more]');
-      const fold = section.querySelector('[data-section-fold]');
+      const fold = section.querySelector('.section-fold');
+      const foldBottom = section.querySelector('[data-fold-bottom]');
+      const row = section.querySelector('[data-more-row]');
       if (!more) return;
       const cards = Array.from(section.querySelectorAll('.customer-card'));
       const rule = FOLD[currentView()];
@@ -463,10 +465,13 @@
       cards.forEach((card, index) => card.classList.toggle('is-cut', index >= limit));
       const foldable = cards.length > rule.first * cols;
       const all = limit >= cards.length;
-      more.hidden = !foldable;
-      more.textContent = all ? '접기 ▴' : '더 보기 ▾';
+      if (row) row.hidden = !foldable; else more.hidden = !foldable;
+      more.textContent = all ? '접기' : '더 보기';
+      more.dataset.dir = all ? 'up' : 'down';   // 화살표는 CSS로 같은 모양(2026-10-22 형우: 더 보기·접기 화살표·글꼴 통일)
       more.setAttribute('aria-expanded', String(all));
       if (fold) fold.hidden = !(foldable && rows > rule.first);
+      // 일부만 펼쳤을 때는 아래 '더 보기' 옆에도 '접기'(2026-10-22 형우). 다 펼치면 '더 보기' 자리가 '접기'가 된다.
+      if (foldBottom) foldBottom.hidden = !(foldable && rows > rule.first && !all);
     });
   }
   let moreTimer = null;

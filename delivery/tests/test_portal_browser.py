@@ -164,10 +164,13 @@ class PortalBrowserScenarios(StaticLiveServerTestCase):
                 # 공공기관 33곳: 1280px 4열 → 8개, '더 보기'는 두 줄(8개)씩 → 4번이면 다 보이고 '접기 ▴'
                 more = page.locator('#section-public [data-section-more]')
                 for expected in (16, 24, 32, 33):
-                    expect(more).to_have_text('더 보기 ▾')
+                    expect(more).to_have_text('더 보기')
                     more.click()
                     self.assertEqual(page.locator('#section-public .customer-card').evaluate_all('cs => cs.filter(c => c.offsetParent).length'), expected)
-                expect(more).to_have_text('접기 ▴')
+                    if expected == 16:   # 일부만 펼치면 '더 보기' 옆에 '접기'(2026-10-22 형우)
+                        expect(page.locator('#section-public [data-fold-bottom]')).to_be_visible()
+                expect(more).to_have_text('접기')
+                expect(page.locator('#section-public [data-fold-bottom]')).to_be_hidden()
                 page.evaluate('window.scrollTo(0, 1200)')
                 expect(band).to_be_visible()
                 expect(band.locator('.band-value')).to_have_text('공공기관')
@@ -189,7 +192,7 @@ class PortalBrowserScenarios(StaticLiveServerTestCase):
                 # 띠 필터(PC): 띠 아래 제품 칩, 고르면 그 자리에서 바뀌고 패널은 열린 채로
                 for _ in range(4):
                     more.click()
-                expect(more).to_have_text('접기 ▴')
+                expect(more).to_have_text('접기')
                 page.evaluate('window.scrollTo(0, 1200)')
                 page.locator('[data-band-filter]').click()
                 band_filter = page.locator('[data-band-filter-panel]')
@@ -259,7 +262,7 @@ class PortalBrowserScenarios(StaticLiveServerTestCase):
                 # 폰 검색(2026-10-22 형우): 🔍를 다시 누르거나 키보드를 내리면 검색창이 닫힌다. 걸러진 결과는 그대로, 지우기는 ×.
                 expect(page.locator('.band-inline-search')).to_be_hidden()
                 public_more = page.locator('#section-public [data-section-more]')
-                while public_more.text_content().strip() == '더 보기 ▾':
+                while public_more.text_content().strip() == '더 보기':
                     public_more.click()
                 page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
                 float_search = page.locator('[data-float-search]')
