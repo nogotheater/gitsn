@@ -1,4 +1,5 @@
 from functools import wraps
+from io import BytesIO
 from django.contrib import messages
 from django.contrib.auth import get_user_model, logout
 from django.contrib.auth.decorators import login_required
@@ -11,6 +12,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_http_methods
 from .services.list_order import item_order_key
+from .services.logo_cache import logo_bytes
 from .domain.products import product_sort_key
 from .models import Category, Region, DisplayKind, Customer, Contract, SitePresentation, Product
 from .portal_forms import DeliveryAuthenticationForm, PerformanceFilterForm, AccountCreateForm, AccountEditForm, AccountPasswordForm
@@ -195,11 +197,11 @@ def logo(request, kind, object_id):
         raise Http404
     if audience == 'partner':
         rows = rows.filter(show_in_list=True, partner_public=True)
-    obj = get_object_or_404(rows.only('id', 'logo'), pk=object_id)
+    obj = get_object_or_404(rows.only('id', 'logo', 'updated_at'), pk=object_id)
     if not obj.logo:
         raise Http404
     try:
-        stream = obj.logo.open('rb')
+        stream = BytesIO(logo_bytes(obj))   # 권한 확인은 매번, 파일 내용은 서버 메모리에서(2026-10-22)
     except (OSError, ValueError):
         raise Http404 from None
     content_type = 'image/png' if obj.logo.name.lower().endswith('.png') else 'image/jpeg'

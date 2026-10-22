@@ -1,4 +1,5 @@
 from functools import wraps
+from io import BytesIO
 from urllib.parse import urlencode
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -15,6 +16,7 @@ from .forms import PresentationForm, ContractForm, ProductFormSet, SiteFormSet, 
 from .domain.products import ordered_products, product_sort_key
 from .models import Customer, Contract, Category, DisplayKind, SitePresentation, InstallationSite, Product
 from .services.access import require_manager
+from .services.logo_cache import logo_bytes
 from .services.planning import save_presentation, save_contract, end_contract, save_product, delete_product
 from .services.current_performance import customer_current_quantities
 from .services.duplicates import duplicate_candidates, merge_duplicate_customers
@@ -241,8 +243,8 @@ def logo(request, kind, object_id):
     if not obj.logo:
         raise Http404
     try:
-        response = FileResponse(obj.logo.open('rb'), content_type='image/png' if obj.logo.name.lower().endswith('.png') else 'image/jpeg')
-    except FileNotFoundError:
+        response = FileResponse(BytesIO(logo_bytes(obj)), content_type='image/png' if obj.logo.name.lower().endswith('.png') else 'image/jpeg')
+    except (FileNotFoundError, OSError):
         raise Http404 from None
     response['Cache-Control'] = 'private, no-store'
     response['X-Content-Type-Options'] = 'nosniff'

@@ -33,3 +33,8 @@ def service_worker(request):
     response = HttpResponse(body, content_type="application/javascript; charset=utf-8")
     response["Cache-Control"] = "no-cache"
     return response
+
+@require_GET
+def robots(request):
+    """검색 엔진은 어떤 화면도 수집하지 않게(2026-10-22)."""
+    return HttpResponse("User-agent: *\nDisallow: /\n", content_type="text/plain; charset=utf-8")

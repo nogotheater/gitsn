@@ -12,4 +12,5 @@ subprocess.run([sys.executable, "manage.py", "collectstatic", "--noinput", "--ve
 port = os.environ.get("PORT", "8000")   # Render는 PORT를 정해 준다
 # 무료 서버 메모리(512MB)에 맞춰 작업자 2개. PDF 만들기(크롬)가 메모리를 많이 쓴다.
 os.execvp("gunicorn", ["gunicorn", "config.wsgi:application", "--bind", f"0.0.0.0:{port}",
-                       "--workers", os.environ.get("WEB_CONCURRENCY", "2"), "--timeout", "120", "--access-logfile", "-"])
+                       "--workers", os.environ.get("WEB_CONCURRENCY", "2"), "--worker-class", "gthread", "--threads", "4",
+                       "--timeout", "120", "--access-logfile", "-"])

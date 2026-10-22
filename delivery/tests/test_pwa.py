@@ -20,3 +20,9 @@ class HomeScreenApp(TestCase):
         self.assertContains(login, 'rel="manifest"')
         self.assertContains(login, 'apple-touch-icon')
         self.assertContains(login, "serviceWorker.register('/sw.js')")
+
+    def test_search_engines_are_told_to_stay_out(self):
+        robots = self.client.get('/robots.txt')
+        self.assertEqual(robots.status_code, 200)
+        self.assertIn('Disallow: /', robots.content.decode())
+        self.assertEqual(self.client.get('/login/')['X-Robots-Tag'], 'noindex, nofollow, noarchive')
