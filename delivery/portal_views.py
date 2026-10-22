@@ -10,6 +10,7 @@ from django.http import FileResponse, Http404, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_http_methods
+from .services.list_order import item_order_key
 from .domain.products import product_sort_key
 from .models import Category, Region, DisplayKind, Customer, Contract, SitePresentation, Product
 from .portal_forms import DeliveryAuthenticationForm, PerformanceFilterForm, AccountCreateForm, AccountEditForm, AccountPasswordForm
@@ -81,8 +82,9 @@ def performance(request):
     else:
         payload = {'items': [], 'counts': {'total': 0, 'public': 0, 'private': 0, 'by_category': {}, 'private_by_category': {}}}
     selected_ids = set(product_ids)
-    # 분류 → (지자체·의회는) 권역 → 이름 순(C2).
-    items = sorted(payload['items'], key=lambda row: (*section_rank(row['category'], row['region']), row['name'].casefold(), row['kind'], row['id']))
+    # 분류 → (지자체·의회는) 권역 → 이름 순(C2). 중앙정부·민간·지자체는 정한 순서(services/list_order, 2026-10-22 형우).
+    order = item_order_key(payload['items'])
+    items = sorted(payload['items'], key=lambda row: (*section_rank(row['category'], row['region']), *order(row), row['kind'], row['id']))
     for item in items:
         item['category_label'] = Category(item['category']).label
         item['region_label'] = Region(item['region']).label if item['region'] else ''

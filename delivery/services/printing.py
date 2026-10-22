@@ -6,6 +6,7 @@ from PIL import Image, ImageOps
 from django.conf import settings
 from django.core.exceptions import PermissionDenied, SuspiciousFileOperation, ValidationError
 from django.utils import timezone
+from .list_order import item_order_key
 from delivery.domain.products import product_sort_key, short_and_long
 from delivery.models import Category, Customer, SitePresentation
 from .access import audience_for_user
@@ -61,11 +62,12 @@ def print_document(user, cleaned, scope):
         if count:
             totals.append({'label': label, 'count': count})
     # 섹션은 화면 목록과 같다: 지자체·의회는 권역별(C2, 형우 2026-10-21 '인쇄·PDF도 권역별').
+    order = item_order_key(items)
     for section in list_sections(payload['counts']):
         label = section['label']
         pair = (section['code'], section['region'])
         cards = []
-        for item in sorted((row for row in items if section_of(row['category'], row['region']) == pair), key=lambda row: (row['name'].casefold(), row['kind'], row['id'])):
+        for item in sorted((row for row in items if section_of(row['category'], row['region']) == pair), key=lambda row: (*order(row), row['kind'], row['id'])):
             cards.append({'name': item['name'], 'symbol': item['name'][:1],
                           'region': '',
                           'logo': logos.get((item['kind'], item['id']), '')})
