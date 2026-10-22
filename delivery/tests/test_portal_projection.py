@@ -93,4 +93,4 @@ class OverviewProjectionScenarios(SimpleTestCase):
         self.assertNotIn('— 계속', html)
         self.assertLess(html.index('id="section-central"'), html.index('id="section-education"'))
         for index in range(26):
-            self.assertEqual(html.count(f'<h3>가상 고객사 {index:02}</h3>'), 1)
+            self.assertEqual(html.count(f'>가상 고객사 {index:02}</h3>'), 1)   # h3에 전체 이름 title이 붙음(폰 카드 두 줄 자르기, 2026-10-22)

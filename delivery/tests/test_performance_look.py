@@ -5,6 +5,7 @@
 - 룩: 안내 줄 삭제, 폰 제목 '지슨 고객사', 카드 8px, 폰 ☰ 한 줄, 누르는 곳 44px, 인쇄 화면은 그대로.
 """
 import os
+import re
 from tempfile import TemporaryDirectory
 from unittest import skipUnless
 from django.contrib.auth import get_user_model
@@ -199,7 +200,19 @@ class PerformanceLookBrowser(StaticLiveServerTestCase):
                 expect(more).to_have_text('접기 ▴')
                 row = page.locator('#section-public .customer-card').first.bounding_box()
                 self.assertLess(row['height'], 56)
-                expect(page.locator('.section-label .hint')).to_be_hidden()
+                expect(page.locator('.section-label')).to_have_count(0)   # 2026-10-22 형우: '표시 목록 N개' 줄 삭제
+                # 폰 카드형(2026-10-22 형우): 한 줄 두 장, 접힌 상태 네 곳·더 보기 +네 곳, 분류 줄 숨김, 이름 두 줄까지
+                page.locator('.mobile-bar [data-view="card"]').click()
+                expect(page.locator('[data-view-root]')).to_have_class(re.compile(r'view-card'))
+                self.assertEqual(page.locator('#section-public .performance-grid').evaluate('(el) => getComputedStyle(el).gridTemplateColumns.split(" ").length'), 2)
+                self.assertEqual(visible(), 4)
+                more.click()
+                self.assertEqual(visible(), 8)
+                card = page.locator('#section-public .customer-card').first
+                expect(card.locator('p.muted')).to_be_hidden()
+                self.assertLess(card.bounding_box()['height'], 170)
+                self.assertEqual(style('#section-public .customer-card h3', 'fontSize'), '15px')
+                page.locator('.mobile-bar [data-view="list"]').click()
                 self.assertEqual(style('.page-head h1', 'fontSize'), '22px')
                 menu = page.locator('.look-menu-btn')
                 expect(menu).to_be_visible()

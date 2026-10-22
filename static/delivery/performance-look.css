@@ -248,3 +248,11 @@
   .performance-page .band-filter:hover,.performance-page .band-row .category-band-button:hover{background:#fff}
   .performance-page .band-filter[aria-expanded="true"],.performance-page .band-row .category-band-button[aria-expanded="true"]{background:#fff;border-color:rgba(78,124,199,.45);color:var(--look-in-strong)}
 }
+/* 폰 카드형(2026-10-22 형우): 한 줄 두 장의 작은 카드. 로고 40px, 이름 15px 두 줄까지(넘치면 …), 섹션 제목과 같은 분류 줄은 숨김. */
+@media screen and (max-width:639px){
+  .performance-page .view-card .performance-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .performance-page .view-card .performance-grid .customer-card{min-height:0;padding:14px 12px 12px;gap:8px}
+  .performance-page .view-card .performance-grid .customer-card .symbol{width:40px;height:40px;font-size:16px}
+  .performance-page .view-card .performance-grid .customer-card h3{font-size:15px;line-height:1.35;min-height:calc(2 * 1.35em);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .performance-page .view-card .performance-grid .customer-card>p.muted{display:none}
+}

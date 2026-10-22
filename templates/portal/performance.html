@@ -50,7 +50,6 @@
     {% if search_query %}<a class="active-chip" data-live href="{{ clear_search_url }}" aria-label="검색 조건 해제">검색 “{{ search_query }}”<span class="active-remove" aria-hidden="true">×</span></a>{% endif %}
     {% if has_filters or search_query %}<a class="clear-all" data-live href="{% url 'performance' %}">모두 해제</a>{% endif %}
   </div>
-  <div class="section-label" data-live-region="label"><span>표시 목록 <strong>{{ page.paginator.count }}</strong>개</span><span class="hint">분류별 · 이름순 · 집계 제외 장소가 포함되면 목록 수와 고객사 수가 다를 수 있습니다.{% if search_query %} 검색은 목록만 좁히며 고객사 수는 바뀌지 않습니다.{% endif %}</span></div>
   <div class="performance-categories" data-view-root data-live-region="list">
     {% for group in list_groups %}
     <section class="performance-category{% if collapse_sections %} is-collapsible{% endif %}" id="section-{{ group.key }}" aria-labelledby="category-{{ group.key }}" data-category="{{ group.code }}"{% if group.region %} data-region="{{ group.region }}"{% endif %}>

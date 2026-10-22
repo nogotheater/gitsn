@@ -119,7 +119,9 @@
     if (!band) return;
     const show = bandPast || bandPinned();
     if (band.hidden === show) band.hidden = !show;
-    if (tools) tools.hidden = !bandPast;
+    // 폰 검색창이 열려 있는 동안은 알약을 그대로 둔다 — 🔍를 다시 눌러 닫을 수 있게(2026-10-22 형우)
+    const phoneSearch = root.querySelector('[data-band-search]');
+    if (tools) tools.hidden = !(bandPast || (narrow() && phoneSearch && !phoneSearch.hidden));
     if (show) syncBand();
     if (!bandPast) { closeIndex(); if (!bandPinned()) closeFilter(); }
   }
@@ -398,11 +400,13 @@
     closeIndex(); closeFilter();
     bandInput.value = topSearch ? topSearch.value : '';
     bandSearch.hidden = false;
+    applyBand();
     bandInput.focus();
   }
   function closeSearch(clear) {
     if (!bandSearch || bandSearch.hidden) return;
     bandSearch.hidden = true;
+    applyBand();
     if (clear && bandInput && bandInput.value) { mirrorSearch('', null); runSearch(''); }
     const button = root.querySelector('[data-float-search]');
     if (button && !button.closest('[hidden]')) button.focus({ preventScroll: true });
