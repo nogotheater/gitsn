@@ -43,6 +43,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "config.middleware.noindex",
+    "config.middleware.server_timing",
 ]
 ROOT_URLCONF = "config.urls"
 TEMPLATES = [{
@@ -106,6 +107,8 @@ if env_bool("DJANGO_BEHIND_PROXY", False):   # 앞단(Render)이 https를 맡는
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 if env_bool("DJANGO_SERVE_STATIC", False):   # 정적 파일(CSS·JS·아이콘)은 WhiteNoise가 낸다
     MIDDLEWARE.insert(1, "whitenoise.middleware.WhiteNoiseMiddleware")
+    # 화면이 부르는 CSS·JS는 주소 끝에 ?v=내용값이 붙어 바뀌면 주소가 달라진다 → 30일 동안 다시 묻지 않게(2026-10-22, 속도)
+    WHITENOISE_MAX_AGE = 30 * 24 * 3600
 # 인터넷 서버에서는 DB 연결을 60초 재사용(요청마다 암호화 연결을 새로 맺으면 느리다, 2026-10-22). PC는 지금처럼 0.
 DATABASES["default"]["CONN_MAX_AGE"] = int(os.environ.get("POSTGRES_CONN_MAX_AGE", "60" if _render_host else "0"))
 DATABASES["default"]["CONN_HEALTH_CHECKS"] = DATABASES["default"]["CONN_MAX_AGE"] > 0

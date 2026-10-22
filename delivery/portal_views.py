@@ -1,5 +1,6 @@
 from functools import wraps
 from io import BytesIO
+from time import perf_counter
 from django.contrib import messages
 from django.contrib.auth import get_user_model, logout
 from django.contrib.auth.decorators import login_required
@@ -10,6 +11,7 @@ from django.db import DatabaseError
 from django.http import FileResponse, Http404, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.cache import never_cache
+from django.utils.cache import add_never_cache_headers, patch_cache_control
 from django.views.decorators.http import require_GET, require_http_methods
 from .services.list_order import item_order_key
 from .services.logo_cache import logo_bytes
@@ -72,6 +74,7 @@ def filter_url(path, query):
 @never_cache
 @require_GET
 def performance(request):
+    started = perf_counter()
     audience = audience_for_user(request.user)
     form = PerformanceFilterForm(request.GET)
     valid = form.is_valid()
@@ -138,6 +141,8 @@ def performance(request):
         active = product['id'] in selected_ids
         chosen = [value for value in product_ids if value != product['id']] if active else product_ids + [product['id']]
         product_chips.append({**product, 'active': active, 'url': toggled_url(chosen, categories)})
+    if hasattr(request, 'timing'):
+        request.timing['data'] = (perf_counter() - started) * 1000   # 자료 준비 시간(나머지는 화면 그리기)
     return render(request, 'portal/performance.html', {
         'form': form, 'page': page, 'counts': payload['counts'], 'groups': groups, 'list_groups': list_groups,
         'collapse_sections': not categories and not search,
@@ -185,7 +190,6 @@ def site_detail(request, presentation_id):
 
 
 @login_required
-@never_cache
 @require_GET
 def logo(request, kind, object_id):
     audience = audience_for_user(request.user)
@@ -207,6 +211,10 @@ def logo(request, kind, object_id):
     content_type = 'image/png' if obj.logo.name.lower().endswith('.png') else 'image/jpeg'
     response = FileResponse(stream, content_type=content_type, filename='symbol.png' if content_type == 'image/png' else 'symbol.jpg')
     response['X-Content-Type-Options'] = 'nosniff'
+    if audience == 'partner':
+        add_never_cache_headers(response)   # 파트너사는 공개 정책이 바뀌면 바로 따라야 해서 저장하지 않는다(기존 그대로)
+    else:
+        patch_cache_control(response, private=True, max_age=3600)   # 직원은 이 기기에 1시간 보관(2026-10-22, 속도)
     return response
 
 
