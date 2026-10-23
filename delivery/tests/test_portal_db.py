@@ -1,5 +1,6 @@
 """Audience HTTP and account security tests on Django's isolated PostgreSQL DB."""
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 from uuid import uuid4
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
@@ -65,6 +66,35 @@ class PortalHttpScenarios(TestCase):
 
     def account_data(self, **changes):
         return {**{'username': 'new-account', 'first_name': '', 'role': 'employee', 'password1': 'NewLocalExample!74', 'password2': 'NewLocalExample!74'}, **changes}
+
+    def test_server_reuses_built_page_until_data_changes_and_never_shares_personal_parts(self):
+        # 2026-10-23 형우 '진행하자'(속도 4번): 자료가 그대로면 만들어 둔 화면 재료를 다시 쓴다. 바뀌면 바로 새로 만든다.
+        from delivery import portal_views
+        from delivery.services import page_cache
+        page_cache.clear()
+        self.addCleanup(page_cache.clear)
+        with override_settings(PERFORMANCE_PAGE_CACHE=True), patch('delivery.portal_views._performance_context', wraps=portal_views._performance_context) as build:
+            first = self.view(self.employee).content.decode()
+            again = self.view(self.employee).content.decode()
+            self.assertEqual(build.call_count, 1)                    # 두 번째는 다시 만들지 않았다
+            self.assertIn('공개 가상 기관', again)
+            self.assertEqual(first.count('customer-card'), again.count('customer-card'))
+            # 사람마다 다른 부분(메뉴·보안 토큰)은 매번 그린다: 관리자 메뉴가 직원 화면에 섞이지 않는다
+            manager = self.view(self.manager).content.decode()
+            self.assertEqual(build.call_count, 1)                    # 같은 직원용 재료를 썼지만
+            self.assertIn('고객사 관리', manager)
+            self.assertNotIn('고객사 관리', self.view(self.employee).content.decode())
+            # 파트너사는 따로 만든다(비공개 이름이 섞이지 않는다)
+            self.assertNotIn('SECRET_TARGET_SENTINEL', self.view(self.partner).content.decode())
+            self.assertEqual(build.call_count, 2)
+            # 이름을 고치면 바로 새로 만든다
+            self.public.organization.official_name = '이름 바꾼 가상 기관'
+            self.public.organization.save()
+            self.assertIn('이름 바꾼 가상 기관', self.view(self.employee).content.decode())
+            # 계약 제품을 지우면(줄 수가 줄면) 바로 새로 만든다
+            before = self.view(self.employee, {'products': [str(self.i.pk)]}).context['counts']['total']
+            ContractProduct.objects.filter(contract__customer=self.public, product=self.i).delete()
+            self.assertEqual(self.view(self.employee, {'products': [str(self.i.pk)]}).context['counts']['total'], before - 1)
 
     def test_partner_response_has_only_public_rows_and_same_total_without_private_metadata(self):
         employee = self.view(self.employee)

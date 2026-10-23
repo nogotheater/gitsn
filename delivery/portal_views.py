@@ -10,11 +10,13 @@ from django.core.paginator import Paginator
 from django.db import DatabaseError
 from django.http import FileResponse, Http404, HttpResponse, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.views.decorators.cache import never_cache
 from django.utils.cache import add_never_cache_headers, patch_cache_control
 from django.views.decorators.http import require_GET, require_http_methods
 from .services.list_order import item_order_key
+from .services import page_cache
 from .services.logo_cache import logo_bytes
 from .services.logo_renditions import logo_class, logo_css, logo_signature
 from .domain.products import product_sort_key
@@ -85,6 +87,26 @@ def performance(request):
     product_ids = [str(p.pk) for p in data['products']]
     categories = list(data['category'])
     search = data['q']
+    # 자료가 그대로면 서버가 만들어 둔 화면 재료(숫자·칩·그려 둔 목록)를 다시 쓴다(2026-10-23 형우 '진행하자' → 4번).
+    # 판 번호 = 고객사·계약·제품 등 표마다 (마지막 수정 시각, 줄 수). 하나라도 바뀌면 새로 만든다. 10분 지나도 새로 만든다.
+    key = None
+    if valid and page_cache.enabled():
+        key = ('performance', audience, tuple(product_ids), tuple(categories), search, page_cache.data_signature())
+    context = page_cache.get(key)
+    if context is None:
+        context = _performance_context(request, audience, form, valid, product_ids, categories, search, started)
+        context['list_html'] = render_to_string('portal/includes/performance_list.html', context)
+        page_cache.put(key, context)
+    elif hasattr(request, 'timing'):
+        request.timing['data'] = (perf_counter() - started) * 1000
+        request.timing['reuse'] = 0
+    return render(request, 'portal/performance.html', {
+        **context, 'form': form,
+        'logo_css_url': reverse('performance-logo-css') + '?v=' + logo_signature(audience)}, status=200 if valid else 400)
+
+
+def _performance_context(request, audience, form, valid, product_ids, categories, search, started):
+    """납품현황 화면 재료(사람마다 다른 것 빼고: 로그인 정보·보안 토큰은 화면 틀이 따로 그린다)."""
     # 제품·분류를 하나도 안 고른 화면은 브라우저가 '전체 목록'으로 들고 있다가 칩을 누르면 그 자리에서 고른다(2026-10-22 형우: 속도)
     base_view = valid and not product_ids and not categories
     if valid:
@@ -170,8 +192,8 @@ def performance(request):
         count_index = {'products': [product['id'] for product in catalog], 'sections': keys, 'rows': rows}
     if hasattr(request, 'timing'):
         request.timing['data'] = (perf_counter() - started) * 1000   # 자료 준비 시간(나머지는 화면 그리기)
-    return render(request, 'portal/performance.html', {
-        'form': form, 'page': page, 'counts': payload['counts'], 'groups': groups, 'list_groups': list_groups,
+    return {
+        'page': page, 'counts': payload['counts'], 'groups': groups, 'list_groups': list_groups,
         'collapse_sections': not categories and not search,
         'filter_query': page_query.urlencode(), 'print_query': print_query.urlencode(),
         'has_filters': bool(product_ids or categories), 'search_query': search,
@@ -180,8 +202,7 @@ def performance(request):
         'selected_category_labels': [label for code, label in Category.choices if code in categories],
         'show_category_strip': valid, 'product_chips': product_chips,
         'active_products': [chip for chip in product_chips if chip['active']],
-        'is_partner': audience == 'partner', 'filters_valid': valid, 'count_index': count_index,
-        'logo_css_url': reverse('performance-logo-css') + '?v=' + logo_signature(audience)}, status=200 if valid else 400)
+        'is_partner': audience == 'partner', 'filters_valid': valid, 'count_index': count_index}
 
 
 @employee_only

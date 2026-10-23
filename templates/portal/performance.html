@@ -51,17 +51,7 @@
     {% if has_filters or search_query %}<a class="clear-all" data-live href="{% url 'performance' %}">모두 해제</a>{% endif %}
   </div>
   <div class="performance-categories" data-view-root data-live-region="list">
-    {% for group in list_groups %}
-    <section class="performance-category{% if collapse_sections %} is-collapsible{% endif %}" id="section-{{ group.key }}" aria-labelledby="category-{{ group.key }}" data-category="{{ group.code }}"{% if group.region %} data-region="{{ group.region }}"{% endif %}>
-      <div class="performance-category-heading">
-        <h2 id="category-{{ group.key }}">{{ group.label }}{% if group.continued %}<span class="category-continued"> — 계속</span>{% endif %}</h2>
-        <span class="category-total">{{ group.count }}곳</span>{% if collapse_sections %}<button type="button" class="section-fold" data-section-fold data-dir="up" hidden>접기</button>{% endif %}
-        {% if is_partner and group.private_count %}<small class="category-private-note" data-testid="category-private-count">비공개 {{ group.private_count }}곳 포함</small>{% endif %}
-      </div>
-      {% if group.items %}<div class="customer-grid performance-grid">{% for item in group.items %}{% if is_partner %}<article class="customer-card" data-pm="{{ item.pm }}">{% else %}<a class="customer-card" href="{{ item.detail_url }}" data-pm="{{ item.pm }}">{% endif %}<div class="symbol{% if item.logo_class %} {{ item.logo_class }}{% endif %}">{{ item.initial }}</div><h3 title="{{ item.name }}">{{ item.name }}</h3><p class="muted small">{{ item.category_label }}{% if item.region_label %} · {{ item.region_label }}{% endif %}</p><div class="badges">{% for product in item.products %}<span class="product-mark{% if product.emphasized %} is-selected{% elif product.subdued %} is-subdued{% endif %}" data-p="{{ product.bit }}" style="--product-color:{{ product.badge }}" title="{{ product.name }}{% if product.emphasized %} · 선택 제품{% endif %}">{{ product.marker|default:product.name }}</span>{% endfor %}</div>{% if is_partner %}</article>{% else %}</a>{% endif %}{% endfor %}</div>{% if collapse_sections %}<div class="section-more-row" data-more-row hidden><button type="button" class="section-more" data-section-more aria-expanded="false"></button><button type="button" class="section-more section-more-fold" data-section-fold data-fold-bottom data-dir="up" hidden>접기</button></div>{% endif %}
-      {% else %}<p class="category-empty hint">{% if is_partner and group.private_count %}비공개 고객사는 숫자에만 포함하며 개별 정보는 표시하지 않습니다.{% else %}집계에 포함되며 목록에는 표시하지 않는 고객사입니다.{% endif %}</p>{% endif %}
-    </section>
-    {% empty %}<div class="empty"><h2>{% if search_query %}“{{ search_query }}”에 맞는 고객사가 없습니다{% else %}표시할 고객사가 없습니다{% endif %}</h2><p>{% if has_filters or search_query %}아래 조건을 바꾸거나 해제해 보세요.{% else %}등록된 유효 계약을 확인해 주세요.{% endif %}</p>{% if has_filters or search_query %}<div class="empty-conditions">{% for chip in active_products %}<a class="active-chip" data-live href="{{ chip.url }}"><span class="product-mark" style="--product-color:{{ chip.color|badge_color }}">{{ chip.marker|default:chip.code }}</span>{{ chip.name }}<span class="active-remove" aria-hidden="true">×</span></a>{% endfor %}{% if selected_category_labels %}<span class="active-text">{{ selected_category_labels|join:', ' }}</span>{% endif %}</div><a class="button secondary" href="{% url 'performance' %}">필터 모두 해제</a>{% endif %}</div>{% endfor %}
+    {{ list_html }}
   </div>
   {% if count_index %}{{ count_index|json_script:"count-index" }}{% endif %}
   <div data-live-region="pages">{% include 'portal/pagination.html' %}</div>
