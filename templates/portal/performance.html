@@ -21,7 +21,7 @@
 
   <div class="product-panel" id="product-panel" data-product-panel>
     <div class="product-panel-head"><strong>제품</strong><span class="hint">누르면 바로 적용됩니다. 여러 제품을 고르면 그중 하나 이상 도입한 고객사를 표시합니다.</span></div>
-    <div class="product-chips" data-live-region="panel-chips">{% for chip in product_chips %}<a class="product-chip{% if chip.active %} is-active{% endif %}" data-live data-live-key="prod-{{ chip.id }}" href="{{ chip.url }}"{% if chip.active %} aria-current="true"{% endif %}>{{ chip.name }}</a>{% empty %}<span class="hint">등록된 제품이 없습니다.</span>{% endfor %}</div>
+    <div class="product-chips" data-live-region="panel-chips">{% for chip in product_chips %}<a class="product-chip{% if chip.active %} is-active{% endif %}" data-live data-live-key="prod-{{ chip.id }}" data-mark="{{ chip.marker|default:chip.code }}" data-color="{{ chip.color|badge_color }}" href="{{ chip.url }}"{% if chip.active %} aria-current="true"{% endif %}>{{ chip.name }}</a>{% empty %}<span class="hint">등록된 제품이 없습니다.</span>{% endfor %}</div>
   </div>
   <script>(function(){var p=document.getElementById('product-panel');try{p.hidden=sessionStorage.getItem('gitsn-product-panel')!=='1';}catch(e){p.hidden=true;}})();</script>
 

@@ -63,7 +63,8 @@ def preview(request):
         return render(request, 'portal/print_error.html', context, status=400)
     # 미리보기는 글꼴(7MB)을 페이지에 넣지 않고 주소로 받는다 — 브라우저가 한 번 받으면 다시 쓴다(2026-10-22). PDF는 지금처럼 넣는다.
     return render(request, 'portal/print_document.html', {**context, 'show_controls': True, 'print_font': '',
-                                                          'print_font_url': static('delivery/fonts/FreesentationVF.ttf')})
+                                                          'print_font_url': static('delivery/fonts/FreesentationVF-core.woff2'),
+                                                          'print_font_ext_url': static('delivery/fonts/FreesentationVF-ext.woff2')})
 
 
 @login_required

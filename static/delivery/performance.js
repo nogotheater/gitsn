@@ -230,6 +230,61 @@
     });
     marks.filter(mark => mark.classList.contains('is-subdued')).forEach(mark => box.appendChild(mark));   // 고른 제품 먼저(서버와 같은 순서)
   }
+  // 서버 확인이 오기 전에 눌러도 맞게: 인쇄 주소·조건 칩·숨은 칸·검색 지우기 주소를 바로 맞춘다(2026-10-23, 검사가 찾은 1초 틈)
+  function syncLinks(want, labels) {
+    const printQuery = buildUrl('', want.products, want.categories, '').replace(/^\?/, '');
+    root.querySelectorAll('[data-live-region="print-top"], [data-live-region="print-bottom"]').forEach(link => {
+      link.href = `${new URL(link.href, window.location.href).pathname}?${printQuery}`;
+    });
+    const clearSearch = buildUrl(want.path, want.products, want.categories, '');
+    const clearInField = root.querySelector('[data-live-region="search-clear"] a');
+    if (clearInField) clearInField.href = clearSearch;
+    const hidden = (name, value) => { const input = document.createElement('input'); input.type = 'hidden'; input.name = name; input.value = value; return input; };
+    const searchHidden = root.querySelector('[data-live-region="search-hidden"]');
+    if (searchHidden) searchHidden.replaceChildren(...want.products.map(v => hidden('products', v)), ...want.categories.map(v => hidden('category', v)));
+    const sheetHidden = root.querySelector('[data-live-region="sheet-hidden"]');
+    if (sheetHidden) sheetHidden.replaceChildren(...want.categories.map(v => hidden('category', v)), ...(want.q ? [hidden('q', want.q)] : []));
+    // 위쪽 조건 줄: 분류 이름 · 고른 제품(× 해제) · 검색 · 모두 해제
+    const active = root.querySelector('[data-live-region="active"]');
+    if (!active) return;
+    const parts = [];
+    const span = (cls, text) => { const node = document.createElement('span'); node.className = cls; node.textContent = text; return node; };
+    const names = labels.filter(([code]) => want.categories.includes(code)).map(([, label]) => label);
+    if (names.length) parts.push(span('active-label', '분류'), span('active-text', names.join(', ')));
+    root.querySelectorAll('[data-live-region="panel-chips"] a.product-chip').forEach(chip => {
+      const id = chip.dataset.liveKey.replace(/^prod-/, '');
+      if (!want.products.includes(id)) return;
+      const link = document.createElement('a');
+      link.className = 'active-chip';
+      link.dataset.live = '';
+      link.href = buildUrl(want.path, want.products.filter(v => v !== id), want.categories, want.q);
+      link.setAttribute('aria-label', `${chip.textContent} 조건 해제`);
+      const mark = span('product-mark', chip.dataset.mark || '');
+      mark.style.setProperty('--product-color', chip.dataset.color || '');
+      link.append(mark, document.createTextNode(chip.textContent), span('active-remove', '×'));
+      link.lastChild.setAttribute('aria-hidden', 'true');
+      parts.push(link);
+    });
+    if (want.q) {
+      const link = document.createElement('a');
+      link.className = 'active-chip';
+      link.dataset.live = '';
+      link.href = clearSearch;
+      link.setAttribute('aria-label', '검색 조건 해제');
+      link.append(document.createTextNode(`검색 “${want.q}”`), span('active-remove', '×'));
+      link.lastChild.setAttribute('aria-hidden', 'true');
+      parts.push(link);
+    }
+    if (want.products.length || want.categories.length || want.q) {
+      const link = document.createElement('a');
+      link.className = 'clear-all';
+      link.dataset.live = '';
+      link.href = want.path;
+      link.textContent = '모두 해제';
+      parts.push(link);
+    }
+    active.replaceChildren(...parts);
+  }
   function quickApply(url, focusKey) {
     const want = readState(url);
     const now = readState(window.location.href);
@@ -349,6 +404,7 @@
     });
     boxes.forEach(box => { box.checked = want.products.includes(box.value); });
     paintBoxes();
+    syncLinks(want, labels);
     history.replaceState({ performanceLive: true }, '', url);
     syncMore();
     syncBand();
