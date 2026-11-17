@@ -12,7 +12,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_http_methods
-from .forms import PresentationForm, ContractForm, ProductFormSet, SiteFormSet, ProductCatalogForm, DuplicateSearchForm, DuplicateContractFormSet
+from .forms import site_display_of, PresentationForm, ContractForm, ProductFormSet, SiteFormSet, ProductCatalogForm, DuplicateSearchForm, DuplicateContractFormSet
 from .domain.products import ordered_products, product_sort_key
 from .models import Customer, Contract, Category, DisplayKind, SitePresentation, InstallationSite, Product
 from .services.access import require_manager
@@ -214,7 +214,7 @@ def contract_edit(request, customer_id, contract_id=None):
             p = presentations.get(link.site_id)
             data = {'existing_site': link.site_id, 'products': [selection.contract_product.product_id for selection in link.product_selections.all()]}
             if p:
-                data.update({key: getattr(p, key) for key in ['show_in_list', 'include_in_total', 'display_as', 'category', 'region']})
+                data.update({key: getattr(p, key) for key in ['display_as', 'category', 'region']}, site_display=site_display_of(p))
                 data.update(partner_public='public' if p.partner_public else 'private', display_revision=p.updated_at.isoformat())
             initial_sites.append(data)
     post = request.POST if request.method == 'POST' else None
@@ -232,7 +232,7 @@ def contract_edit(request, customer_id, contract_id=None):
             else:
                 messages.success(request, '계약 정보를 저장했습니다.')
                 return redirect('planning-contract-detail', contract_id=saved.pk)
-    metadata = {str(p.site_id): {**{key: getattr(p, key) for key in ['show_in_list', 'include_in_total', 'display_as', 'category', 'region']},
+    metadata = {str(p.site_id): {**{key: getattr(p, key) for key in ['display_as', 'category', 'region']}, 'site_display': site_display_of(p),
                                'partner_public': 'public' if p.partner_public else 'private', 'display_revision': p.updated_at.isoformat()}
                 for p in presentations.values()}
     return render(request, 'planning/contract_form.html', {'form': form, 'products': products, 'sites': sites, 'site_metadata': metadata,
@@ -270,10 +270,10 @@ def contract_end(request, contract_id):
 def site_edit(request, site_id):
     site = get_object_or_404(InstallationSite, pk=site_id)
     p = SitePresentation.objects.filter(site=site).first()
-    initial = presentation_initial(p, site.official_name) if p else {'official_name': site.official_name, 'display_as': DisplayKind.SITE,
-                                                                  'show_in_list': False, 'include_in_total': False}
+    initial = ({**presentation_initial(p, site.official_name), 'site_display': site_display_of(p)} if p else
+               {'official_name': site.official_name, 'display_as': DisplayKind.SITE, 'site_display': 'none'})
     form = PresentationForm(request.POST if request.method == 'POST' else None, request.FILES or None,
-                            initial=initial)
+                            initial=initial, for_site=True)
     if request.method == 'POST' and form.is_valid():
         try:
             save_presentation(request.user, form.cleaned_data, site_id=site_id)

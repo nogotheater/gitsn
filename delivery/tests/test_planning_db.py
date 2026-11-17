@@ -54,7 +54,7 @@ class PlanningHttpScenarios(TestCase):
             data[f'products-{index}-quantity'] = str(quantity)
         if sites:
             data.update({'sites-0-new_site_name': '가상 설치 장소', 'sites-0-products': [str(self.c.pk)],
-                         'sites-0-show_in_list': 'on', 'sites-0-display_as': 'site', 'sites-0-partner_public': 'default',
+                         'sites-0-site_display': 'none', 'sites-0-display_as': 'site', 'sites-0-partner_public': 'default',
                          'sites-0-category': '', 'sites-0-region': ''})
         return {**data, **changes}
 
@@ -95,6 +95,28 @@ class PlanningHttpScenarios(TestCase):
         customer.refresh_from_db()
         self.assertTrue(customer.partner_public)
 
+    # 2026-11-17 형우: '실적 목록에 표시'라는 이름이 헷갈리고(실적 정보는 없다), 두 체크박스를 따로 두면
+    # '카드 없이 숫자만' 같은 조합이 생긴다 → 설치 장소는 선택 하나로: 표시 안 함 / 별도 고객사로 표시(카드 + 숫자).
+    def test_site_display_is_one_choice_that_sets_card_and_count_together(self):
+        customer = self.make_customer()
+        page = self.client.get(reverse('planning-contract-new', args=[customer.pk])).content.decode()
+        self.assertNotIn('실적 목록에 표시', page)
+        contract = self.post_contract(customer, self.contract_data(sites=True, **{'sites-0-site_display': 'separate'}))
+        presentation = SitePresentation.objects.get()
+        self.assertEqual((presentation.show_in_list, presentation.include_in_total), (True, True))
+        self.assertEqual(current_performance_payload(self.manager)['counts']['total'], 2)
+        site_page = self.client.get(reverse('planning-site-edit', args=[presentation.site_id])).content.decode()
+        self.assertNotIn('실적 목록에 표시', site_page)
+        self.assertIn('별도 고객사로 표시', site_page)
+        self.assertIn('value="separate" selected', site_page)
+        data = {'official_name': presentation.site.official_name, 'category': 'public', 'region': '', 'display_as': 'site',
+                'partner_public': 'default', 'site_display': 'none', 'memo': '', 'revision': presentation.updated_at.isoformat()}
+        self.assertEqual(self.client.post(reverse('planning-site-edit', args=[presentation.site_id]), data).status_code, 302)
+        presentation.refresh_from_db()
+        self.assertEqual((presentation.show_in_list, presentation.include_in_total), (False, False))
+        self.assertEqual(current_performance_payload(self.manager)['counts']['total'], 1)
+        self.assertTrue(contract.pk)
+
     def test_contract_sites_and_optional_source_save_with_correct_quantities_and_products(self):
         customer = self.make_customer()
         contract = self.post_contract(customer, self.contract_data(sites=True))
@@ -105,7 +127,8 @@ class PlanningHttpScenarios(TestCase):
         site = InstallationSite.objects.get()
         self.assertEqual(set(site_current_product_ids(site.pk)), {self.c.pk})
         presentation = SitePresentation.objects.get()
-        self.assertFalse(presentation.include_in_total)
+        # 2026-11-17 형우: 설치 장소 표시는 선택 하나('표시 안 함' / '별도 고객사로 표시'). 예전에는 '목록 표시만 켬'으로 저장했다(기준 변경 이유).
+        self.assertEqual((presentation.show_in_list, presentation.include_in_total), (False, False))
         self.assertEqual(current_performance_payload(self.manager)['counts']['total'], 1)
         self.assertContains(self.client.get(reverse('planning-contract-detail', args=[contract.pk])), '합계')
         self.assertContains(self.client.get(reverse('planning-contract-edit', args=[customer.pk, contract.pk])), '계약 수정')
@@ -263,6 +286,7 @@ class PlanningHttpScenarios(TestCase):
         self.client.force_login(self.employee)
         self.assertIn(self.client.post(reverse('planning-product-delete', args=[self.i.pk])).status_code, [302, 403])
         self.assertTrue(Product.objects.filter(pk=self.i.pk).exists())
+
     def test_existing_physical_site_can_receive_settings_without_a_get_write(self):
         site = InstallationSite.objects.create(official_name='기존 가상 장소')
         url = reverse('planning-site-edit', args=[site.pk])
@@ -393,3 +417,4 @@ class PlanningHttpScenarios(TestCase):
                              reverse('planning-customer-detail', args=[primary.pk]))
         self.assertRedirects(self.client.get(reverse('planning-contract-new', args=[duplicate.pk])),
                              reverse('planning-customer-detail', args=[primary.pk]))
+

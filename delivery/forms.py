@@ -39,6 +39,22 @@ class LogoField(forms.ImageField):
         return image
 
 
+# 설치 장소의 납품현황 표시(2026-11-17 형우): '실적 목록에 표시'·'총 고객사 수에 포함' 두 체크박스를 선택 하나로.
+# 따로 두면 '카드 없이 숫자만'·'카드만 있고 숫자 없음' 같은 말이 안 되는 조합이 생겼다.
+SITE_DISPLAY = [('none', '납품현황에 표시 안 함 — 이 계약의 설치 장소로만 기록'),
+                ('separate', '별도 고객사로 표시 — 납품현황에 카드 추가, 고객사 수 +1')]
+
+
+def site_display_of(presentation):
+    return 'separate' if presentation is not None and (presentation.show_in_list or presentation.include_in_total) else 'none'
+
+
+def apply_site_display(data):
+    shown = data.get('site_display') == 'separate'
+    data['show_in_list'] = data['include_in_total'] = shown
+    return data
+
+
 class PresentationForm(forms.Form):
     official_name = forms.CharField(label='공식 명칭', max_length=255)
     category = forms.ChoiceField(label='고객 분류', choices=[('', '분류 선택')] + list(Category.choices),
@@ -73,9 +89,15 @@ class PresentationForm(forms.Form):
                                          widget=forms.RadioSelect,
                                          help_text='행정기관은 지도에서 그 시군구 면을 칠하고, 시설·공기업은 점으로만 표시합니다.')
 
-    def __init__(self, *args, with_location=False, **kwargs):
+    def __init__(self, *args, with_location=False, for_site=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.with_location = with_location
+        self.for_site = for_site
+        if for_site:
+            del self.fields['show_in_list']
+            del self.fields['include_in_total']
+            self.fields['site_display'] = forms.ChoiceField(label='납품현황 표시', choices=SITE_DISPLAY, initial='none', required=False,
+                                                            help_text='별도 고객사로 표시하면 고객사(계약 당사자)와 따로 카드가 생기고 고객사 수에도 더해집니다.')
         if with_location:
             self.fields['location_sido'].choices = sido_choices()
             self.fields['location_unit'].choices = unit_choices()
@@ -110,6 +132,8 @@ class PresentationForm(forms.Form):
             self.add_error('region', '지방자치단체·의회는 지역을 선택해 주세요.')
         if data.get('remove_logo') and data.get('logo'):
             self.add_error('logo', '새 심볼 등록과 기존 심볼 삭제 중 하나만 선택해 주세요.')
+        if self.for_site:
+            apply_site_display(data)
         return data
 
 
@@ -167,8 +191,7 @@ class ContractSiteForm(forms.Form):
     existing_site = forms.ModelChoiceField(label='기존 설치 장소', queryset=InstallationSite.objects.all().order_by('official_name'), required=False)
     new_site_name = forms.CharField(label='새 설치 장소 명칭', max_length=255, required=False)
     products = forms.ModelMultipleChoiceField(label='이 장소의 실제 설치 제품', queryset=ordered_products(Product.objects.all()), widget=forms.CheckboxSelectMultiple)
-    show_in_list = forms.BooleanField(label='실적 목록에 표시', required=False)
-    include_in_total = forms.BooleanField(label='총 고객사 수에 포함', required=False)
+    site_display = forms.ChoiceField(label='납품현황 표시', choices=SITE_DISPLAY, initial='none', required=False)
     update_display = forms.BooleanField(label='기존 장소의 표시 설정도 변경', required=False,
                                        help_text='기존 장소를 재사용할 때 선택합니다. 연결된 다른 계약의 장소 표시에도 적용됩니다.')
     display_revision = forms.CharField(required=False, widget=forms.HiddenInput)
@@ -181,7 +204,7 @@ class ContractSiteForm(forms.Form):
         data = super().clean()
         if bool(data.get('existing_site')) == bool(data.get('new_site_name')):
             self.add_error('new_site_name', '기존 장소를 선택하거나 새 장소 명칭을 입력해 주세요. 둘 중 하나만 입력합니다.')
-        return data
+        return apply_site_display(data)
 
 
 class SiteRows(BaseFormSet):
