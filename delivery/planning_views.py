@@ -7,7 +7,7 @@ from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db import DatabaseError
 from django.db.models import Prefetch
-from django.http import FileResponse, Http404, JsonResponse
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -102,8 +102,23 @@ def attach_errors(form, error):
 
 @planning_only
 def customer_list(request):
-    query = request.GET.get('q', '').strip()
-    category = request.GET.get('category', '')
+    """고객사 관리 목록. 자료가 그대로면 만들어 둔 재료를 다시 쓴다(2026-11-17 형우 '고객사 관리 페이지가 좀 느린 것 같고' →
+    납품현황과 같은 판 번호 방식. 서버가 매번 전체 고객사·계약을 다시 세던 0.4~0.7초)."""
+    from .services import page_cache
+    today = timezone.localdate()
+    key = None
+    if page_cache.enabled():
+        key = ('planning-customers', tuple(sorted((name, tuple(values)) for name, values in request.GET.lists())), today, page_cache.data_signature())
+    context = page_cache.get(key)
+    if context is None:
+        context = _customer_list_context(request.GET, today)
+        page_cache.put(key, context)
+    return render(request, 'planning/customer_list.html', context)
+
+
+def _customer_list_context(params, today):
+    query = params.get('q', '').strip()
+    category = params.get('category', '')
     rows = Customer.objects.select_related('organization').filter(merged_into__isnull=True).prefetch_related(
         Prefetch('contracts', queryset=Contract.objects.filter(is_active=True).prefetch_related('product_lines__product'), to_attr='current_contracts')
     ).order_by('organization__official_name')
@@ -114,8 +129,6 @@ def customer_list(request):
     # 기간 보기(2026-11-17 형우, 시안 7로 확정): 등록월·계약월, 연도, 열두 달 막대('계약 N건 / 신규 N곳'), 정리할 자료
     from urllib.parse import urlencode
     from .services.customer_months import BASELINE_UNTIL, chart, month_index, month_label, years_of, _month
-    today = timezone.localdate()
-    params = request.GET
     basis = params.get('basis') if params.get('basis') in {'registered', 'contract'} else 'registered'
     marks, stats = month_index(basis)
     month = params.get('month', '')
@@ -140,15 +153,30 @@ def customer_list(request):
         day_of = lambda customer: marks[customer.pk][month][1] or timezone.localtime(customer.created_at).date()
         rows = sorted(rows.filter(pk__in=ids), key=lambda customer: (-day_of(customer).toordinal(), customer.organization.official_name))
     page = Paginator(rows, 24).get_page(params.get('page'))
+    page.object_list = list(page.object_list)   # 재료를 다시 쓸 때 DB를 또 읽지 않게
     # 심볼 없는 고객사는 계약 당사자의 심볼을 빌려 쓴다(납품현황과 같은 규칙, 2026-11-17 형우)
-    from .services.logo_renditions import logo_fallbacks
+    # 심볼은 납품현황과 같은 정리본(2026-11-17 형우 '로고 표출 크기가 납품현황이랑 다른 거 같네'): 묶음에 있으면 묶음 한 파일,
+    # 없으면(현재 계약이 없는 고객사) 정리본 한 장을 주소에 판 번호를 넣어 받는다 — 원본을 매번 받던 카드당 0.5~1초.
+    from .services.logo_renditions import FIELDS, logo_bundle, logo_class, logo_fallbacks, rendition_version
     borrowed = logo_fallbacks([{'kind': 'customer', 'id': str(c.pk), 'has_logo': bool(c.logo)} for c in page], 'employee')
+    bundle_version, bundled = logo_bundle('employee')
+    sources = {}
+    for customer in page:
+        source = str(customer.pk) if customer.logo else borrowed.get(('customer', str(customer.pk)), '')
+        if source:
+            sources[customer.pk] = source
+    single = {str(obj.pk): obj for obj in Customer.objects.only(*FIELDS).filter(
+        pk__in=[source for source in sources.values() if ('customer', source) not in bundled])}
     for customer in page:
         badges = {line.product_id: line.product for contract in customer.current_contracts for line in contract.product_lines.all()}
         # 제품 순서는 어디서나 I, S, B, D, P, H, C(2026-10-22 형우). 여기만 이름순이었다.
         customer.product_badges = sorted(badges.values(), key=lambda product: product_sort_key(product.marker, product.name, product.pk))
         customer.needs_location = customer.category in LOCATION_CATEGORIES and not customer.location_code
-        customer.borrowed_logo = borrowed.get(('customer', str(customer.pk)), '')
+        source = sources.get(customer.pk, '')
+        customer.logo_class = logo_class(source) if ('customer', source) in bundled else ''
+        customer.logo_url = (reverse('planning-logo-web', args=['customer', source]) + '?v=' + rendition_version(single[source])
+                             if source in single and single[source].logo else '')
+        customer.logo_borrowed = bool(source) and source != str(customer.pk)
         customer.month_kind, day = marks[customer.pk][month] if month else ('', None)
         customer.month_day = day
         customer.month_date = f'{day:%Y.%m.%d} 계약' if day and basis == 'contract' and month[:1].isdigit() else ''
@@ -167,7 +195,8 @@ def customer_list(request):
     shown_years = years[:4] if year in years[:4] else years[:3] + [year]
     word = '계약' if basis == 'contract' else '등록'
     row = stats.get(month, {'new': 0, 'added': 0})
-    return render(request, 'planning/customer_list.html', {
+    return {
+        'logo_css_url': reverse('performance-logo-css') + '?v=' + bundle_version,
         'page': page, 'groups': groups, 'query': query, 'selected_category': category, 'categories': Category.choices,
         'basis': basis, 'month': month, 'kind': kind, 'year': year,
         'basis_urls': {key: link(basis=key, year='', month='all', kind='') for key in ('registered', 'contract')},
@@ -183,7 +212,7 @@ def customer_list(request):
                             {'key': 'new', 'label': '신규', 'count': row['new'], 'on': kind == 'new', 'url': link(kind='new')},
                             {'key': 'added', 'label': '계약 추가', 'count': row['added'], 'on': kind == 'added', 'url': link(kind='added')}]
                            if month[:1].isdigit() else [],
-        'clear_url': link(month='all', kind='')})
+        'clear_url': link(month='all', kind='')}
 
 
 def presentation_initial(obj, name):
@@ -388,6 +417,28 @@ def logo(request, kind, object_id):
         raise Http404 from None
     response['Cache-Control'] = 'private, no-store'
     response['X-Content-Type-Options'] = 'nosniff'
+    return response
+
+
+@planning_only
+@require_GET
+def logo_web(request, kind, object_id):
+    """카드용 정리본 한 장(납품현황 카드와 같은 그림). 주소의 판 번호가 맞으면 이 기기에 오래 보관한다."""
+    from .services.logo_renditions import FIELDS, rendition_version, renditions
+    model = Customer if kind == 'customer' else SitePresentation if kind == 'site' else None
+    if model is None:
+        raise Http404
+    obj = get_object_or_404(model.objects.only(*FIELDS), pk=object_id)
+    if not obj.logo:
+        raise Http404
+    row = renditions([(kind, obj)], need='web').get((kind, str(obj.pk)))
+    web = bytes(row.web) if row else b''
+    if not web:
+        raise Http404
+    response = HttpResponse(web, content_type='image/webp')
+    response['X-Content-Type-Options'] = 'nosniff'
+    response['Cache-Control'] = ('private, max-age=31536000, immutable' if request.GET.get('v') == rendition_version(obj)
+                                 else 'private, no-store')
     return response
 
 

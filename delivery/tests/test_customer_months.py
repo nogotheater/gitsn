@@ -100,6 +100,22 @@ class CustomerPeriodScenarios(TestCase):
         self.assertIn('월 계약 기관', self.page(basis='contract', month='1999-01'))   # 없는 달은 무시하고 전체
 
 
+    @override_settings(PERFORMANCE_PAGE_CACHE=True)
+    def test_list_reuses_its_material_until_data_changes(self):
+        # 2026-11-17 형우 '고객사 관리 페이지가 좀 느린 것 같고' → 자료가 그대로면 다시 세지 않는다
+        from delivery.services import customer_months, page_cache
+        page_cache.clear()
+        self.addCleanup(page_cache.clear)
+        self.customer('월 캐시 기관', (2026, 11, 5))
+        with mock.patch.object(customer_months, 'month_index', wraps=customer_months.month_index) as counted:
+            self.assertIn('월 캐시 기관', self.page(month='all'))
+            self.assertIn('월 캐시 기관', self.page(month='all'))
+            self.assertEqual(counted.call_count, 1)
+            self.customer('월 캐시 새 기관', (2026, 11, 6))
+            self.assertIn('월 캐시 새 기관', self.page(month='all'))
+            self.assertEqual(counted.call_count, 2)
+
+
 class CustomerPeriodChart(SimpleTestCase):
     def test_bar_heights_share_one_scale_and_future_months_stay_empty(self):
         stats = {'2026-03': {'new': 2, 'added': 1, 'contracts': 2}, '2026-06': {'new': 1, 'added': 0, 'contracts': 0}}

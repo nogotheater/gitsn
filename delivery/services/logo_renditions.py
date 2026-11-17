@@ -137,6 +137,17 @@ def logo_signature(audience):
     return _version(audience, visible_logo_targets(audience))
 
 
+def logo_bundle(audience):
+    """(판 번호, 묶음에 든 심볼 {(kind, id)}) — 고객사 관리도 납품현황과 같은 묶음을 쓴다(2026-11-17 형우: 로고 크기가 다르다, 느리다)."""
+    targets = visible_logo_targets(audience)
+    return _version(audience, targets), {(kind, str(obj.pk)) for kind, obj in targets}
+
+
+def rendition_version(obj):
+    """묶음에 없는 심볼 한 장의 주소 판 번호. 심볼이나 정리 방식이 바뀌면 주소가 바뀐다."""
+    return hashlib.sha256(rendition_key(obj).encode()).hexdigest()[:12]
+
+
 def logo_class(object_id):
     return 'l' + str(object_id).replace('-', '')
 

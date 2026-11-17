@@ -153,11 +153,31 @@ class PlanningHttpScenarios(TestCase):
         ContractProduct.objects.create(contract=contract, product=self.c, quantity=2)
         screen = self.client.get(reverse('performance')).content.decode()
         self.assertEqual(screen.count(f'symbol {logo_class(city.pk)}'), 2)
-        listing = self.client.get(reverse('planning-home')).content.decode()
-        self.assertEqual(listing.count(reverse('planning-logo', args=['customer', city.pk])), 2)
+        # 고객사 관리 카드도 납품현황과 같은 정리본 묶음을 쓴다(2026-11-17 형우: '로고 표출 크기가 납품현황이랑 다르다', '느리다')
+        listing = self.client.get(reverse('planning-home'), {'month': 'all'}).content.decode()
+        self.assertEqual(listing.count(f'symbol {logo_class(city.pk)}'), 2)
+        self.assertIn('title="계약 당사자의 심볼"', listing)
+        self.assertNotIn(reverse('planning-logo', args=['customer', city.pk]), listing)
         detail = self.client.get(reverse('planning-customer-detail', args=[office.pk])).content.decode()
         self.assertIn('납품현황 표시', detail)
         self.assertNotIn('실적 목록', detail)
+
+    def test_customer_without_current_contract_gets_one_cached_card_rendition(self):
+        # 묶음(현재 계약이 있는 고객사)에 없는 심볼은 정리본 한 장을 판 번호 주소로 받고, 그 기기에 오래 보관한다(2026-11-17 형우).
+        from delivery.services.logo_renditions import rendition_version
+        lone = self.make_customer('가상 계약 없는 기관')
+        lone.logo.save('lone.png', image_upload())
+        lone.refresh_from_db()
+        url = reverse('planning-logo-web', args=['customer', lone.pk]) + '?v=' + rendition_version(lone)
+        listing = self.client.get(reverse('planning-home'), {'month': 'all'}).content.decode()
+        self.assertIn(url.replace('&', '&amp;'), listing)
+        response = self.client.get(url)
+        self.assertEqual(response['Content-Type'], 'image/webp')
+        self.assertIn('immutable', response['Cache-Control'])
+        self.assertTrue(response.content.startswith(b'RIFF'))
+        self.assertIn('no-store', self.client.get(reverse('planning-logo-web', args=['customer', lone.pk]) + '?v=old')['Cache-Control'])
+        self.client.force_login(self.employee)
+        self.assertEqual(self.client.get(url).status_code, 403)
 
     def test_contract_sites_and_optional_source_save_with_correct_quantities_and_products(self):
         customer = self.make_customer()

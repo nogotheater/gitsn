@@ -15,7 +15,7 @@ from django.conf import settings
 from django.db import connection
 
 TTL_SECONDS = 600
-_LIMIT = 24
+_LIMIT = 48   # 납품현황 + 고객사 관리(2026-11-17)
 _store = OrderedDict()
 _lock = Lock()
 
