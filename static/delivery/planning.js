@@ -1,7 +1,47 @@
 'use strict';
 (() => {
 document.querySelectorAll('form[data-confirm]').forEach(form => form.addEventListener('submit', event => { if (!window.confirm(form.dataset.confirm)) event.preventDefault(); }));
- document.querySelectorAll('.symbol img').forEach(img => img.addEventListener('error', () => { img.hidden = true; const fallback = img.parentElement.querySelector('.fallback'); if (fallback) fallback.hidden = false; }));
+ const symbols = scope => scope.querySelectorAll('.symbol img').forEach(img => img.addEventListener('error', () => { img.hidden = true; const fallback = img.parentElement.querySelector('.fallback'); if (fallback) fallback.hidden = false; }));
+ symbols(document);
+ // 고객사 관리 기간 보기: 누르면 바로 표시를 바꾸고, 화면 전체를 다시 열지 않고 목록만 바꾼다(2026-11-17 형우 '버튼 누를 때 딜레이가 너무 길어')
+ const periodRoot = document.querySelector('[data-period-root]');
+ if (periodRoot) {
+  let ticket = 0;
+  const press = link => {
+   const group = link.closest('.seg, .period-years, .period-cols');
+   if (group) group.querySelectorAll('a').forEach(a => { a.classList.remove('on', 'sel'); a.removeAttribute('aria-current'); });
+   link.classList.add(link.classList.contains('period-col') ? 'sel' : 'on'); link.setAttribute('aria-current', 'true');
+  };
+  const swap = async (url, push, focusKey) => {
+   const mine = ++ticket;
+   periodRoot.setAttribute('aria-busy', 'true');
+   try {
+    const response = await fetch(url, {credentials: 'same-origin'});
+    if (!response.ok) throw new Error(String(response.status));
+    const next = new DOMParser().parseFromString(await response.text(), 'text/html').querySelector('[data-period-root]');
+    if (!next) throw new Error('no root');
+    if (mine !== ticket) return;
+    periodRoot.replaceChildren(...next.childNodes);
+    symbols(periodRoot);
+    if (push) history.pushState({period: true}, '', url);
+    const target = focusKey && periodRoot.querySelector(`[data-swap="${focusKey}"]`);
+    if (target) target.focus({preventScroll: true});
+   } catch (error) {
+    if (mine === ticket) window.location.href = url;
+   } finally {
+    if (mine === ticket) periodRoot.removeAttribute('aria-busy');
+   }
+  };
+  periodRoot.addEventListener('click', event => {
+   const link = event.target.closest('a[data-swap]');
+   if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+   event.preventDefault();
+   press(link);
+   const details = link.closest('details'); if (details) details.open = false;
+   swap(link.href, true, link.dataset.swap);
+  });
+  window.addEventListener('popstate', () => swap(window.location.href, false, ''));
+ }
  const presentation = document.querySelector('[data-presentation-form]');
  if (presentation) {
   const category = presentation.querySelector('[name="category"]');

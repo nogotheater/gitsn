@@ -106,31 +106,44 @@ def customer_list(request):
     납품현황과 같은 판 번호 방식. 서버가 매번 전체 고객사·계약을 다시 세던 0.4~0.7초)."""
     from .services import page_cache
     today = timezone.localdate()
-    key = None
+    key = signature = None
     if page_cache.enabled():
-        key = ('planning-customers', tuple(sorted((name, tuple(values)) for name, values in request.GET.lists())), today, page_cache.data_signature())
+        signature = page_cache.data_signature()
+        key = ('planning-customers', tuple(sorted((name, tuple(values)) for name, values in request.GET.lists())), today, signature)
     context = page_cache.get(key)
     if context is None:
-        context = _customer_list_context(request.GET, today)
+        context = _customer_list_context(request.GET, today, signature)
         page_cache.put(key, context)
     return render(request, 'planning/customer_list.html', context)
 
 
-def _customer_list_context(params, today):
+def _shared(signature, name, make):
+    """달·기준을 바꿔 눌러도 같은 판이면 다시 세지 않는 재료(2026-11-17 형우 '버튼 누를 때 딜레이가 너무 길어')."""
+    from .services import page_cache
+    key = ('planning-shared', name, signature) if signature is not None else None
+    value = page_cache.get(key)
+    if value is None:
+        value = make()
+        page_cache.put(key, value)
+    return value
+
+
+def _customer_list_context(params, today, signature=None):
     query = params.get('q', '').strip()
     category = params.get('category', '')
-    rows = Customer.objects.select_related('organization').filter(merged_into__isnull=True).prefetch_related(
+    base = Customer.objects.filter(merged_into__isnull=True)
+    if query:
+        base = base.filter(organization__official_name__icontains=query)
+    if category in Category.values:
+        base = base.filter(category=category)
+    rows = base.select_related('organization').prefetch_related(
         Prefetch('contracts', queryset=Contract.objects.filter(is_active=True).prefetch_related('product_lines__product'), to_attr='current_contracts')
     ).order_by('organization__official_name')
-    if query:
-        rows = rows.filter(organization__official_name__icontains=query)
-    if category in Category.values:
-        rows = rows.filter(category=category)
     # 기간 보기(2026-11-17 형우, 시안 7로 확정): 등록월·계약월, 연도, 열두 달 막대('계약 N건 / 신규 N곳'), 정리할 자료
     from urllib.parse import urlencode
     from .services.customer_months import BASELINE_UNTIL, chart, month_index, month_label, years_of, _month
     basis = params.get('basis') if params.get('basis') in {'registered', 'contract'} else 'registered'
-    marks, stats = month_index(basis)
+    marks, stats = _shared(signature, ('months', basis), lambda: month_index(basis))
     month = params.get('month', '')
     if not params and _month(today) in stats:
         month = _month(today)          # 처음 열면 '등록월 · 이번 달'(이번 달에 넣은 것이 바로 보이게). 없으면 전체.
@@ -149,17 +162,23 @@ def _customer_list_context(params, today):
         return '?' + urlencode({key: value for key, value in state.items() if value not in ('', None)})
 
     if month:
+        # 정렬은 이름·날짜만 읽어서 하고, 카드 재료(계약·제품)는 그 쪽 24곳만 읽는다 — 전에는 '기존 자료' 515곳을 다 읽어 1.7초
         ids = [cid for cid, customer_marks in marks.items() if month in customer_marks and (not kind or customer_marks[month][0] == kind)]
-        day_of = lambda customer: marks[customer.pk][month][1] or timezone.localtime(customer.created_at).date()
-        rows = sorted(rows.filter(pk__in=ids), key=lambda customer: (-day_of(customer).toordinal(), customer.organization.official_name))
-    page = Paginator(rows, 24).get_page(params.get('page'))
-    page.object_list = list(page.object_list)   # 재료를 다시 쓸 때 DB를 또 읽지 않게
+        found = base.filter(pk__in=ids).values_list('pk', 'organization__official_name', 'created_at')
+        order = [pk for pk, name, created in sorted(found, key=lambda row: (
+            -(marks[row[0]][month][1] or timezone.localtime(row[2]).date()).toordinal(), row[1]))]
+        page = Paginator(order, 24).get_page(params.get('page'))
+        loaded = rows.in_bulk(list(page.object_list))
+        page.object_list = [loaded[pk] for pk in page.object_list if pk in loaded]
+    else:
+        page = Paginator(rows, 24).get_page(params.get('page'))
+        page.object_list = list(page.object_list)   # 재료를 다시 쓸 때 DB를 또 읽지 않게
     # 심볼 없는 고객사는 계약 당사자의 심볼을 빌려 쓴다(납품현황과 같은 규칙, 2026-11-17 형우)
     # 심볼은 납품현황과 같은 정리본(2026-11-17 형우 '로고 표출 크기가 납품현황이랑 다른 거 같네'): 묶음에 있으면 묶음 한 파일,
     # 없으면(현재 계약이 없는 고객사) 정리본 한 장을 주소에 판 번호를 넣어 받는다 — 원본을 매번 받던 카드당 0.5~1초.
     from .services.logo_renditions import FIELDS, logo_bundle, logo_class, logo_fallbacks, rendition_version
     borrowed = logo_fallbacks([{'kind': 'customer', 'id': str(c.pk), 'has_logo': bool(c.logo)} for c in page], 'employee')
-    bundle_version, bundled = logo_bundle('employee')
+    bundle_version, bundled = _shared(signature, 'logo-bundle', lambda: logo_bundle('employee'))
     sources = {}
     for customer in page:
         source = str(customer.pk) if customer.logo else borrowed.get(('customer', str(customer.pk)), '')
