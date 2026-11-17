@@ -35,6 +35,7 @@ urlpatterns = [
     path("planning/customers/<uuid:customer_id>/duplicates/review/", planning.duplicate_merge_review, name="planning-duplicate-review"),
     path("planning/contracts/<uuid:contract_id>/", planning.contract_detail, name="planning-contract-detail"),
     path("planning/contracts/<uuid:contract_id>/end/", planning.contract_end, name="planning-contract-end"),
+    path("planning/contracts/<uuid:contract_id>/delete/", planning.contract_delete, name="planning-contract-delete"),
     path("planning/places/<uuid:site_id>/edit/", planning.site_edit, name="planning-site-edit"),
     path("planning/logos/preview/", planning.logo_preview, name="planning-logo-preview"),
     path("planning/logos/<str:kind>/<uuid:object_id>/", planning.logo, name="planning-logo"),

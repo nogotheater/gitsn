@@ -6,7 +6,7 @@ from django.contrib.auth.models import Permission
 from django.test import TestCase, Client, override_settings
 from django.urls import reverse
 from delivery.models import (
-    Customer, Organization, Contract, ContractProduct, InstallationSite,
+    Customer, Organization, Contract, ContractProduct, ContractSite, InstallationSite,
     Product, SitePresentation, SiteProductSelection, UserAccessProfile,
 )
 from delivery.services.audience_performance import current_performance_payload
@@ -116,6 +116,48 @@ class PlanningHttpScenarios(TestCase):
         self.assertEqual((presentation.show_in_list, presentation.include_in_total), (False, False))
         self.assertEqual(current_performance_payload(self.manager)['counts']['total'], 1)
         self.assertTrue(contract.pk)
+
+    def test_wrongly_entered_contract_can_be_deleted_with_its_only_site(self):
+        # 2026-11-17 형우: 영천시 환경사업소 계약을 영천시에 넣었다가, 직접 계약한 기관이라 새 고객사로 다시 넣기로 했다
+        # ("그냥 새로 고객사를 추가하는게 제일 깔끔"). 잘못 넣은 계약은 '종료'가 아니라 삭제한다.
+        customer = self.make_customer('가상 시청')
+        kept = self.post_contract(customer, self.contract_data([(self.i, 3)]))
+        wrong = self.post_contract(customer, self.contract_data([(self.c, 10)], sites=True, **{
+            'sites-0-new_site_name': '가상 시청 환경사업소', 'sites-0-site_display': 'separate'}))
+        self.assertEqual(current_performance_payload(self.manager)['counts']['total'], 2)
+        self.assertContains(self.client.get(reverse('planning-contract-detail', args=[wrong.pk])), '계약 삭제')
+        page = self.client.get(reverse('planning-contract-delete', args=[wrong.pk])).content.decode()
+        self.assertIn('가상 제품 C 10대', page)
+        self.assertIn('가상 시청 환경사업소', page)
+        stale = self.client.post(reverse('planning-contract-delete', args=[wrong.pk]), {'revision': 'old'})
+        self.assertContains(stale, '다른 작업에서 계약이 수정되었습니다')
+        response = self.client.post(reverse('planning-contract-delete', args=[wrong.pk]), {'revision': wrong.updated_at.isoformat()})
+        self.assertRedirects(response, reverse('planning-customer-detail', args=[customer.pk]))
+        self.assertEqual(list(Contract.objects.values_list('pk', flat=True)), [kept.pk])
+        self.assertEqual((InstallationSite.objects.count(), SitePresentation.objects.count(), ContractProduct.objects.count()), (0, 0, 1))
+        self.assertEqual(current_performance_payload(self.manager)['counts']['total'], 1)
+        self.assertEqual(customer_current_quantities(customer.pk), {str(self.i.pk): 3})
+        self.client.force_login(self.employee)
+        self.assertEqual(self.client.post(reverse('planning-contract-delete', args=[kept.pk]), {'revision': kept.updated_at.isoformat()}).status_code, 403)
+        self.assertTrue(Contract.objects.filter(pk=kept.pk).exists())
+
+    def test_symbol_is_borrowed_from_the_contracting_party_and_screens_say_napum(self):
+        # 2026-11-17 형우: '영천시 로고를 올렸는데 영천시 환경사업소에는 반영이 안 됐다' → 심볼 없는 카드는 계약 당사자 심볼.
+        # 관리 화면의 '실적 목록 표시' 문구는 '납품현황 표시'로(실적 정보는 따로 없다).
+        from delivery.services.logo_renditions import logo_class
+        city = self.make_customer('가상 시청')
+        city.logo.save('city.png', image_upload())
+        self.post_contract(city, self.contract_data([(self.i, 1)]))
+        office = self.make_customer('가상 시청 소속 기관')
+        contract = Contract.objects.create(customer=office, contracting_party=city.organization, is_active=True)
+        ContractProduct.objects.create(contract=contract, product=self.c, quantity=2)
+        screen = self.client.get(reverse('performance')).content.decode()
+        self.assertEqual(screen.count(f'symbol {logo_class(city.pk)}'), 2)
+        listing = self.client.get(reverse('planning-home')).content.decode()
+        self.assertEqual(listing.count(reverse('planning-logo', args=['customer', city.pk])), 2)
+        detail = self.client.get(reverse('planning-customer-detail', args=[office.pk])).content.decode()
+        self.assertIn('납품현황 표시', detail)
+        self.assertNotIn('실적 목록', detail)
 
     def test_contract_sites_and_optional_source_save_with_correct_quantities_and_products(self):
         customer = self.make_customer()

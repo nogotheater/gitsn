@@ -111,10 +111,15 @@ def customer_list(request):
     if category in Category.values:
         rows = rows.filter(category=category)
     page = Paginator(rows, 24).get_page(request.GET.get('page'))
+    # 심볼 없는 고객사는 계약 당사자의 심볼을 빌려 쓴다(납품현황과 같은 규칙, 2026-11-17 형우)
+    from .services.logo_renditions import logo_fallbacks
+    borrowed = logo_fallbacks([{'kind': 'customer', 'id': str(c.pk), 'has_logo': bool(c.logo)} for c in page], 'employee')
     for customer in page:
         badges = {line.product_id: line.product for contract in customer.current_contracts for line in contract.product_lines.all()}
-        customer.product_badges = sorted(badges.values(), key=lambda product: product.name)
+        # 제품 순서는 어디서나 I, S, B, D, P, H, C(2026-10-22 형우). 여기만 이름순이었다.
+        customer.product_badges = sorted(badges.values(), key=lambda product: product_sort_key(product.marker, product.name, product.pk))
         customer.needs_location = customer.category in LOCATION_CATEGORIES and not customer.location_code
+        customer.borrowed_logo = borrowed.get(('customer', str(customer.pk)), '')
     return render(request, 'planning/customer_list.html', {'page': page, 'query': query, 'selected_category': category, 'categories': Category.choices})
 
 
@@ -263,6 +268,26 @@ def contract_end(request, contract_id):
             messages.success(request, '계약을 종료했습니다. 과거 기록은 유지됩니다.')
             return redirect('planning-contract-detail', contract_id=contract.pk)
     return render(request, 'planning/contract_end.html', {'contract': contract, 'error': error})
+
+
+@planning_only
+@require_http_methods(['GET', 'POST'])
+def contract_delete(request, contract_id):
+    """잘못 넣은 계약 삭제(2026-11-17 형우). GET은 확인 화면, POST가 삭제. 실제로 끝난 계약은 '계약 종료'."""
+    from .services.contract_delete import contract_deletion_plan, delete_contract
+    contract = get_object_or_404(Contract.objects.select_related('customer__organization', 'contracting_party'), pk=contract_id)
+    error = ''
+    if request.method == 'POST':
+        try:
+            customer = delete_contract(request.user, contract.pk, request.POST.get('revision'))
+        except ValidationError as failure:
+            error = ' '.join(failure.messages)
+        except DatabaseError:
+            error = '계약을 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.'
+        else:
+            messages.success(request, '계약을 삭제했습니다.')
+            return redirect('planning-customer-detail', customer_id=customer.pk)
+    return render(request, 'planning/contract_delete.html', {'contract': contract, 'plan': contract_deletion_plan(contract), 'error': error})
 
 
 @planning_only

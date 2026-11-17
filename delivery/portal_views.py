@@ -18,7 +18,7 @@ from django.views.decorators.http import require_GET, require_http_methods
 from .services.list_order import item_order_key
 from .services import page_cache
 from .services.logo_cache import logo_bytes
-from .services.logo_renditions import logo_class, logo_css, logo_signature
+from .services.logo_renditions import logo_class, logo_css, logo_fallbacks, logo_signature
 from .domain.products import product_sort_key
 from .templatetags.delivery_display import badge_color
 from .models import Category, Region, DisplayKind, Customer, Contract, SitePresentation, Product
@@ -122,10 +122,13 @@ def _performance_context(request, audience, form, valid, product_ids, categories
     detail_base = {'customer': reverse('employee-customer', args=[zero]), 'site': reverse('employee-site', args=[zero])}
     catalog = form.product_catalog()
     product_bit = {product['id']: 1 << index for index, product in enumerate(catalog)} if len(catalog) <= 30 else {}
+    # 심볼이 없는 카드는 계약 당사자(설치 장소는 계약 고객사)의 심볼을 빌려 쓴다(2026-11-17 형우)
+    borrowed = logo_fallbacks(items, audience) if any(not item['has_logo'] for item in items) else {}
     for item in items:
         item['pm'] = sum(product_bit.get(product['id'], 0) for product in item['products'])
         item['detail_url'] = detail_base[item['kind']].replace(zero, item['id'])
-        item['logo_class'] = logo_class(item['id']) if item['has_logo'] else ''
+        source = item['id'] if item['has_logo'] else borrowed.get((item['kind'], item['id']))
+        item['logo_class'] = logo_class(source) if source else ''
         item['initial'] = item['name'][:1]
         item['category_label'] = Category(item['category']).label
         item['region_label'] = Region(item['region']).label if item['region'] else ''

@@ -166,3 +166,34 @@ def logo_css(audience):
             _css_cache.clear()
         _css_cache[version] = body
     return version, body
+
+
+def logo_fallbacks(items, audience):
+    """심볼이 없는 카드가 대신 쓸 심볼(2026-11-17 형우: '영천시 로고를 올렸는데 영천시 환경사업소에는 반영이 안 됐다' → 자동으로).
+
+    - 고객사: 계약 당사자가 다른 기관이고 그 기관이 심볼 있는 고객사이면 그 심볼(예: 영천시 환경사업소 → 영천시).
+    - 설치 장소: 그 장소가 연결된 계약의 고객사 심볼.
+    유효 계약 중 가장 최근 것을 따른다. 파트너사에게는 목록 표시·공개 고객사의 심볼만 빌려 준다(심볼 묶음과 같은 규칙).
+    돌려주는 것: {(종류, id 문자열): 심볼을 빌려 줄 고객사 id 문자열}.
+    """
+    from django.db.models import F
+    from delivery.models import Contract, ContractSite
+    missing_customers = [item['id'] for item in items if item['kind'] == 'customer' and not item['has_logo']]
+    missing_sites = [item['id'] for item in items if item['kind'] == 'site' and not item['has_logo']]
+    out = {}
+    allowed = {} if audience == 'employee' else {'show_in_list': True, 'partner_public': True}
+    if missing_customers:
+        rows = (Contract.objects.filter(customer_id__in=missing_customers, is_active=True, contracting_party__customer__isnull=False)
+                .exclude(contracting_party__customer__logo='').exclude(contracting_party__customer__id=F('customer_id'))
+                .filter(**{f'contracting_party__customer__{key}': value for key, value in allowed.items()})
+                .order_by('-created_at').values_list('customer_id', 'contracting_party__customer__id'))
+        for target, source in rows:
+            out.setdefault(('customer', str(target)), str(source))
+    if missing_sites:
+        rows = (ContractSite.objects.filter(site__presentation__id__in=missing_sites, contract__is_active=True)
+                .exclude(contract__customer__logo='')
+                .filter(**{f'contract__customer__{key}': value for key, value in allowed.items()})
+                .order_by('-contract__created_at').values_list('site__presentation__id', 'contract__customer_id'))
+        for target, source in rows:
+            out.setdefault(('site', str(target)), str(source))
+    return out

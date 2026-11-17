@@ -11,7 +11,7 @@ from .list_order import item_order_key
 from delivery.domain.products import product_sort_key, short_and_long
 from delivery.models import Category, Customer, SitePresentation
 from .access import audience_for_user
-from .logo_renditions import FIELDS as LOGO_FIELDS, rendition_key, renditions
+from .logo_renditions import FIELDS as LOGO_FIELDS, logo_fallbacks, rendition_key, renditions
 from .audience_performance import current_performance_payload
 from .sections import section_of, sections as list_sections
 
@@ -55,8 +55,11 @@ def print_document(user, cleaned, scope):
     # Query logo files only for the already authorized, filtered visible items.
     # 심볼은 미리 줄여 둔 사본(LogoRendition)에서 — 저장소에서 하나씩 받던 것이 서버가 깬 직후 25초 걸렸다(2026-10-22, 속도)
     logos, missing = {}, []
+    borrowed = logo_fallbacks(items, audience) if any(not item['has_logo'] for item in items) else {}   # 심볼 없는 카드는 계약 당사자 것을(2026-11-17)
     for kind, model in [('customer', Customer), ('site', SitePresentation)]:
         ids = [item['id'] for item in items if item['kind'] == kind and item['has_logo']]
+        if kind == 'customer':
+            ids = list(set(ids) | set(borrowed.values()))
         for obj in model.objects.filter(pk__in=ids).only(*LOGO_FIELDS):
             key = (kind, str(obj.pk), rendition_key(obj))
             if key in _LOGO_CACHE:
@@ -71,6 +74,9 @@ def print_document(user, cleaned, scope):
             value = 'data:image/png;base64,' + base64.b64encode(data).decode('ascii') if data else ''
             _LOGO_CACHE[(kind, object_id, row.source)] = value
             logos[(kind, object_id)] = value
+    for target, source in borrowed.items():
+        if logos.get(('customer', source)):
+            logos[target] = logos[('customer', source)]
     groups, totals = [], []
     for code, label in Category.choices:
         count = payload['counts']['by_category'][code]
