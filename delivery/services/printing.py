@@ -11,7 +11,7 @@ from .list_order import item_order_key
 from delivery.domain.products import product_sort_key, short_and_long
 from delivery.models import Category, Customer, SitePresentation
 from .access import audience_for_user
-from .logo_renditions import renditions
+from .logo_renditions import FIELDS as LOGO_FIELDS, rendition_key, renditions
 from .audience_performance import current_performance_payload
 from .sections import section_of, sections as list_sections
 
@@ -57,8 +57,8 @@ def print_document(user, cleaned, scope):
     logos, missing = {}, []
     for kind, model in [('customer', Customer), ('site', SitePresentation)]:
         ids = [item['id'] for item in items if item['kind'] == kind and item['has_logo']]
-        for obj in model.objects.filter(pk__in=ids).only('id', 'logo', 'updated_at'):
-            key = (kind, str(obj.pk), obj.logo.name)
+        for obj in model.objects.filter(pk__in=ids).only(*LOGO_FIELDS):
+            key = (kind, str(obj.pk), rendition_key(obj))
             if key in _LOGO_CACHE:
                 logos[key[:2]] = _LOGO_CACHE[key]
             else:

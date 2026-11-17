@@ -35,6 +35,57 @@ def planning_only(view):
     return wrapped
 
 
+LOGO_WARNINGS = {
+    'low_res': '해상도가 낮습니다. 긴 변 300px 이상인 파일을 권장합니다.',
+    'too_wide': '가로로 너무 깁니다. 기관 이름 글자가 들어 있지 않은지 확인해 주세요.',
+    'too_tall': '세로로 너무 깁니다. 기관 이름 글자가 들어 있지 않은지 확인해 주세요.',
+    'colored_background': '배경색이 있어 그대로 둡니다. 배경이 심볼의 일부인지 확인해 주세요.',
+    'unreadable': '이 파일은 읽을 수 없습니다. PNG나 JPG로 다시 저장해 주세요.',
+    'empty': '그림이 비어 있습니다.',
+}
+
+
+def logo_preview_context(presentation, kind):
+    """심볼 미리보기(2026-11-17 형우): 실제 카드 크기로, 이미 등록된 심볼 3개 옆에 놓고 비교한다."""
+    from .services.logo_renditions import logo_class, logo_signature, visible_logo_targets
+    samples = [logo_class(obj.pk) for _, obj in visible_logo_targets('employee')[:3]]
+    return {'logo_css_url': reverse('performance-logo-css') + '?v=' + logo_signature('employee'), 'logo_samples': samples,
+            'logo_kind': kind, 'logo_id': str(presentation.pk) if presentation is not None and presentation.logo else '',
+            'logo_as_is': bool(presentation is not None and presentation.logo and presentation.logo_fit == 'as_is')}
+
+
+@planning_only
+@require_http_methods(['POST'])
+def logo_preview(request):
+    """올리려는 파일(또는 저장된 심볼)을 화면 카드용으로 정리한 모습과 경고. 저장은 하지 않는다."""
+    import base64
+    from .services.logo_renditions import make
+    upload = request.FILES.get('logo')
+    size = request.POST.get('logo_size') if request.POST.get('logo_size') in {'small', 'normal', 'large'} else 'normal'
+    background = request.POST.get('logo_background') if request.POST.get('logo_background') in {'remove', 'keep'} else 'remove'
+    if upload is not None:
+        if upload.size > 2 * 1024 * 1024:
+            return JsonResponse({'image': '', 'warnings': ['파일이 2MB보다 큽니다.']}, status=400)
+        data, fit = upload.read(), 'auto'
+    else:
+        model = {'customer': Customer, 'site': SitePresentation}.get(request.POST.get('kind'))
+        if model is None:
+            raise Http404
+        obj = get_object_or_404(model, pk=request.POST.get('id'))
+        if not obj.logo:
+            raise Http404
+        try:
+            data = logo_bytes(obj)
+        except (OSError, ValueError):
+            raise Http404 from None
+        fit = 'auto' if obj.logo_fit == 'auto' or request.POST.get('logo_auto') else 'as_is'
+    web, _printed, info = make(data, fit, size, background)
+    response = JsonResponse({'image': 'data:image/webp;base64,' + base64.b64encode(web).decode('ascii') if web else '',
+                             'fit': fit, 'warnings': [LOGO_WARNINGS.get(code, code) for code in info.get('warnings', [])]})
+    response['Cache-Control'] = 'private, no-store'
+    return response
+
+
 def attach_errors(form, error):
     if isinstance(error, ValidationError):
         if hasattr(error, 'message_dict'):
@@ -68,7 +119,7 @@ def customer_list(request):
 
 
 def presentation_initial(obj, name):
-    return {**{field: getattr(obj, field) for field in ['category', 'region', 'include_in_total', 'show_in_list', 'display_as', 'memo']},
+    return {**{field: getattr(obj, field) for field in ['category', 'region', 'include_in_total', 'show_in_list', 'display_as', 'memo', 'logo_size', 'logo_background']},
             'official_name': name, 'partner_public': 'public' if obj.partner_public else 'private',
             'revision': obj.updated_at.isoformat()}
 
@@ -94,7 +145,7 @@ def customer_edit(request, customer_id=None):
             messages.success(request, '고객사 정보를 저장했습니다.')
             return redirect('planning-customer-detail', customer_id=saved.pk)
     return render(request, 'planning/presentation_form.html', {'form': form, 'customer': customer, 'presentation': customer, 'is_site': False,
-                                                               'location_data': location_data()})
+                                                               'location_data': location_data(), **logo_preview_context(customer, 'customer')})
 
 
 @planning_only
@@ -231,7 +282,8 @@ def site_edit(request, site_id):
         else:
             messages.success(request, '설치 장소 표시 설정을 저장했습니다.')
             return redirect('planning-site-edit', site_id=site_id)
-    return render(request, 'planning/presentation_form.html', {'form': form, 'presentation': p, 'site': site, 'is_site': True})
+    return render(request, 'planning/presentation_form.html', {'form': form, 'presentation': p, 'site': site, 'is_site': True,
+                                                               **logo_preview_context(p, 'site')})
 
 
 @planning_only

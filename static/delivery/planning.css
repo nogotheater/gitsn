@@ -5,3 +5,13 @@
 .product-mark{--product-color:#6B7580;justify-content:center;flex:0 0 auto;min-width:22px;height:22px;min-height:0;padding:0 5px;border:0;border-radius:999px;background:var(--surface-subtle);background:color-mix(in srgb,var(--product-color) 14%,white);color:var(--product-color);font-size:11px;font-weight:700;letter-spacing:.01em;line-height:1;text-transform:uppercase}
 
 
+/* 심볼 미리보기(2026-11-17 형우): 실제 카드 크기(48px)로, 이미 등록된 심볼과 나란히 */
+.logo-preview{margin:4px 0 20px;padding:16px;border:1px solid var(--border-subtle,#dde3ea);border-radius:var(--radius-panel,8px);background:#fff}
+.logo-preview[aria-busy="true"] .logo-tile.is-preview,.logo-preview[aria-busy="true"] .logo-tile.is-zoom{opacity:.5}
+.logo-preview-title{margin:0 0 12px;font-weight:600}.logo-preview-title .hint{font-weight:400;margin-left:6px}
+.logo-preview-row{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:8px}
+.logo-tile{width:48px;height:48px;border-radius:8px;background:#fff;box-shadow:inset 0 0 0 1px rgba(18,38,68,.14);display:grid;place-items:center;overflow:hidden;flex:none;color:transparent}
+.logo-tile img{width:100%;height:100%;object-fit:contain}
+.logo-tile.is-preview{box-shadow:inset 0 0 0 2px var(--brand-action,#0474D4)}
+.logo-tile.is-zoom{width:96px;height:96px;margin-left:12px}
+.logo-warnings{margin:0 0 8px;padding-left:18px;color:#b4501e;font-size:14px}.logo-warnings:empty{display:none}

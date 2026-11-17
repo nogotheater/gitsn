@@ -16,33 +16,69 @@ from django.db import IntegrityError
 from delivery.models import LogoRendition
 from .current_performance import current_customers_with_any_products, current_site_presentations_with_any_products
 from .logo_cache import logo_bytes
+from .logo_normalize import normalize
 
-WEB_BOX = (128, 128)      # 카드 심볼은 40~48px. 화면 배율 3배 폰까지 또렷하게.
-PRINT_BOX = (480, 240)    # 인쇄·PDF는 기존과 같은 크기·형식(PNG)
+WEB_SIZE = 96            # 카드 심볼은 40~48px → 2배면 충분(2026-11-17, 용량: 128px·q88 → 96px·q80, 약 4.3KB → 2.5KB)
+PRINT_BOX = (480, 240)    # 인쇄·PDF(올린 그대로인 심볼): 기존과 같은 크기·형식(PNG)
+PRINT_CANVAS = 360        # 인쇄·PDF(자동 정리한 심볼): 정사각 PNG
+RULE = 'r2'               # 사본 만드는 규칙이 바뀌면 올려서 모든 사본을 다시 만든다
 _MAX_FILE = 2 * 1024 * 1024
 MODELS = ('customer', 'site')
+FIELDS = ('id', 'logo', 'updated_at', 'logo_fit', 'logo_size', 'logo_background')
 
 
-def _make(data):
-    """(web WebP, print PNG). 읽을 수 없는 그림이면 빈 값(카드는 글자 타일, 인쇄는 심볼 없음)."""
+def rendition_key(obj):
+    """사본이 무엇으로 만들어졌는지: 원본 파일 + 정리 방식 + 크기 + 배경 + 규칙 판. 하나라도 바뀌면 다시 만든다."""
+    return '|'.join([obj.logo.name, getattr(obj, 'logo_fit', 'as_is'), getattr(obj, 'logo_size', 'normal'),
+                     getattr(obj, 'logo_background', 'remove'), RULE])
+
+
+def _webp(image):
+    """작은 WebP: 손실 압축(q80)과 무손실 중 작은 쪽(색이 단순한 심볼은 무손실이 더 작기도 하다)."""
+    lossy, lossless = BytesIO(), BytesIO()
+    image.save(lossy, format='WEBP', quality=80, method=6)
+    image.save(lossless, format='WEBP', lossless=True, method=6)
+    return min(lossy.getvalue(), lossless.getvalue(), key=len)
+
+
+def open_logo(data):
+    """올린 파일 → Pillow 이미지(PNG·JPG만, 2MB·2천만 화소 이하). 못 읽으면 None."""
     if not data or len(data) > _MAX_FILE:
-        return b'', b''
+        return None
     try:
-        with Image.open(BytesIO(data)) as original:
-            if original.format not in {'PNG', 'JPEG'} or original.width * original.height > 20_000_000:
-                return b'', b''
-            image = ImageOps.exif_transpose(original).convert('RGBA')
-        printed = image.copy()
-        printed.thumbnail(PRINT_BOX, Image.Resampling.LANCZOS)
-        out_print = BytesIO()
-        printed.save(out_print, format='PNG')
-        web = image.copy()
-        web.thumbnail(WEB_BOX, Image.Resampling.LANCZOS)
-        out_web = BytesIO()
-        web.save(out_web, format='WEBP', quality=88, method=4)
-        return out_web.getvalue(), out_print.getvalue()
+        image = Image.open(BytesIO(data))
+        if image.format not in {'PNG', 'JPEG'} or image.width * image.height > 20_000_000:
+            return None
+        image.load()
+        return image
     except (OSError, ValueError, Image.DecompressionBombError):
-        return b'', b''
+        return None
+
+
+def make(data, fit='as_is', size='normal', background='remove'):
+    """(web WebP, print PNG, info). 읽을 수 없는 그림이면 빈 값(카드는 글자 타일, 인쇄는 심볼 없음)."""
+    original = open_logo(data)
+    if original is None:
+        return b'', b'', {'warnings': ['unreadable']}
+    try:
+        if fit == 'auto':
+            canvas, info = normalize(original, size=size, background=background)
+            if canvas is None:
+                return b'', b'', {'warnings': ['empty']}
+            web = canvas.resize((WEB_SIZE, WEB_SIZE), Image.Resampling.LANCZOS)
+            printed = canvas.resize((PRINT_CANVAS, PRINT_CANVAS), Image.Resampling.LANCZOS)
+        else:
+            image = ImageOps.exif_transpose(original).convert('RGBA')
+            printed = image.copy()
+            printed.thumbnail(PRINT_BOX, Image.Resampling.LANCZOS)
+            web = image.copy()
+            web.thumbnail((WEB_SIZE, WEB_SIZE), Image.Resampling.LANCZOS)
+            info = {'warnings': []}
+        out_print = BytesIO()
+        printed.save(out_print, format='PNG', optimize=True)
+        return _webp(web), out_print.getvalue(), info
+    except (OSError, ValueError, Image.DecompressionBombError):
+        return b'', b'', {'warnings': ['unreadable']}
 
 
 def _read(obj):
@@ -62,15 +98,16 @@ def renditions(targets, need='web'):
         for row in LogoRendition.objects.filter(kind=kind, object_id__in=ids).defer('print_png' if need == 'web' else 'web'):
             found[(kind, str(row.object_id))] = row
     stale = [(kind, obj) for kind, obj in targets
-             if (kind, str(obj.pk)) not in found or found[(kind, str(obj.pk))].source != obj.logo.name]
+             if (kind, str(obj.pk)) not in found or found[(kind, str(obj.pk))].source != rendition_key(obj)]
     if stale:
         # 저장소에서 원본 받기는 동시에(하나씩 받으면 97개에 20초), DB 쓰기는 여기서 차례로
         with ThreadPoolExecutor(max_workers=8) as pool:
-            made = list(pool.map(lambda pair: _make(_read(pair[1])), stale))
-        for (kind, obj), (web, printed) in zip(stale, made):
+            made = list(pool.map(lambda pair: make(_read(pair[1]), getattr(pair[1], 'logo_fit', 'as_is'),
+                                                   getattr(pair[1], 'logo_size', 'normal'), getattr(pair[1], 'logo_background', 'remove')), stale))
+        for (kind, obj), (web, printed, info) in zip(stale, made):
             try:
                 row, _ = LogoRendition.objects.update_or_create(
-                    kind=kind, object_id=obj.pk, defaults={'source': obj.logo.name, 'web': web, 'print_png': printed})
+                    kind=kind, object_id=obj.pk, defaults={'source': rendition_key(obj), 'web': web, 'print_png': printed, 'info': info})
             except IntegrityError:   # 다른 요청이 같은 순간에 만들었다
                 row = LogoRendition.objects.get(kind=kind, object_id=obj.pk)
             found[(kind, str(obj.pk))] = row
@@ -84,14 +121,14 @@ def visible_logo_targets(audience):
         rows = current_customers_with_any_products(()) if kind == 'customer' else current_site_presentations_with_any_products(())
         if audience != 'employee':
             rows = rows.filter(show_in_list=True, partner_public=True)
-        out += [(kind, obj) for obj in rows.exclude(logo='').only('id', 'logo', 'updated_at').order_by('pk')]
+        out += [(kind, obj) for obj in rows.exclude(logo='').only(*FIELDS).order_by('pk')]
     return out
 
 
 def _version(audience, targets):
     digest = hashlib.sha256(audience.encode())
     for kind, obj in targets:
-        digest.update(f'|{kind}:{obj.pk}:{obj.logo.name}'.encode())
+        digest.update(f'|{kind}:{obj.pk}:{rendition_key(obj)}'.encode())
     return digest.hexdigest()[:16]
 
 

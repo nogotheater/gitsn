@@ -54,6 +54,11 @@ class PresentationFields(IdentifiedRecord):
     # No unconditional public default: factories apply the confirmed category rule.
     partner_public = models.BooleanField("파트너사 공개 여부")
     logo = models.ImageField("심볼", upload_to="logos/", blank=True)
+    # 심볼 자동 정리(2026-11-17 형우: 팀원이 올려도 크기·여백이 통일되게). 원본 파일은 그대로 두고 화면·인쇄용 사본만 바꾼다.
+    # as_is: 이미 다듬어 올린 기존 심볼(모양 그대로, 용량만 줄임). auto: 여백·배경·크기를 기존 심볼 기준으로 맞춤.
+    logo_fit = models.CharField("심볼 정리", max_length=8, choices=[("auto", "자동 정리"), ("as_is", "올린 그대로")], default="auto")
+    logo_size = models.CharField("심볼 크기", max_length=8, choices=[("small", "작게"), ("normal", "보통"), ("large", "크게")], default="normal")
+    logo_background = models.CharField("심볼 배경", max_length=8, choices=[("remove", "흰 배경 지우기"), ("keep", "배경 유지")], default="remove")
     memo = models.TextField("참고 메모", blank=True)
 
     class Meta:
@@ -186,6 +191,7 @@ class LogoRendition(models.Model):
     source = models.CharField(max_length=255)
     web = models.BinaryField(blank=True, default=b"")
     print_png = models.BinaryField(blank=True, default=b"")
+    info = models.JSONField(default=dict, blank=True)   # 자동 정리 결과: 경고(해상도 낮음 등), 그림 크기
     created_at = models.DateTimeField(auto_now=True)
 
     class Meta:

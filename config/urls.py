@@ -36,6 +36,7 @@ urlpatterns = [
     path("planning/contracts/<uuid:contract_id>/", planning.contract_detail, name="planning-contract-detail"),
     path("planning/contracts/<uuid:contract_id>/end/", planning.contract_end, name="planning-contract-end"),
     path("planning/places/<uuid:site_id>/edit/", planning.site_edit, name="planning-site-edit"),
+    path("planning/logos/preview/", planning.logo_preview, name="planning-logo-preview"),
     path("planning/logos/<str:kind>/<uuid:object_id>/", planning.logo, name="planning-logo"),
     path("planning/products/new/", planning.product_add, name="planning-product-add"),
     path("planning/products/<uuid:product_id>/edit/", planning.product_add, name="planning-product-edit"),

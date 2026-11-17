@@ -92,10 +92,18 @@ def save_presentation(user, data, *, customer_id=None, site_id=None, extra_name_
             if not site_id and data.get('location_managed'):
                 obj.location_code = data.get('location_code', '')
                 obj.institution_type = data.get('institution_type', '')
+            # 심볼 정리(2026-11-17): 새로 올린 심볼은 자동 정리. 기존(올린 그대로) 심볼은 '새 기준으로 자동 정리'를 켤 때만.
+            if data.get('logo_size') in {'small', 'normal', 'large'}:
+                obj.logo_size = data['logo_size']
+            if data.get('logo_background') in {'remove', 'keep'}:
+                obj.logo_background = data['logo_background']
+            if data.get('logo_auto'):
+                obj.logo_fit = 'auto'
             if uploaded:
                 extension = '.png' if uploaded.image.format == 'PNG' else '.jpg'
                 uploaded.name = uuid4().hex + extension
                 obj.logo = uploaded
+                obj.logo_fit = 'auto'
             elif data.get('remove_logo'):
                 obj.logo = ''
             obj.full_clean()

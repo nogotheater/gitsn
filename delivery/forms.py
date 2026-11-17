@@ -51,8 +51,18 @@ class PresentationForm(forms.Form):
     partner_public = forms.ChoiceField(label='파트너사 공개 여부', choices=VISIBILITY, initial='default',
                                       help_text='분류를 변경하면 새 분류의 기본값으로 저장됩니다.')
     logo = LogoField(label='고객사 심볼', required=False,
-                    widget=forms.FileInput(attrs={'accept': '.png,.jpg,.jpeg'}),
-                    help_text='PNG·JPG, 2MB 이하. 없으면 기본 표시를 사용합니다.')
+                    widget=forms.FileInput(attrs={'accept': '.png,.jpg,.jpeg', 'data-logo-input': ''}),
+                    help_text='기관 이름 글자 없이 심볼만 있는 파일을 올려 주세요. 기관 누리집의 CI 다운로드 PNG(투명 배경, 긴 변 300px 이상)가 가장 좋습니다. '
+                              '여백·배경·크기는 다른 심볼과 같게 자동으로 맞춥니다. PNG·JPG, 2MB 이하.')
+    # 심볼 자동 정리(2026-11-17 형우): 손으로 고치는 값은 크기·배경 두 가지뿐
+    logo_size = forms.ChoiceField(label='심볼 크기', required=False, initial='normal', widget=forms.RadioSelect(attrs={'data-logo-option': ''}),
+                                  choices=[('small', '작게'), ('normal', '보통'), ('large', '크게')],
+                                  help_text='미리보기에서 다른 심볼보다 커 보이거나 작아 보이면 바꿔 주세요.')
+    logo_background = forms.ChoiceField(label='심볼 배경', required=False, initial='remove', widget=forms.RadioSelect(attrs={'data-logo-option': ''}),
+                                        choices=[('remove', '흰 배경 지우기'), ('keep', '배경 유지')],
+                                        help_text='흰 바탕이 심볼의 일부(흰 원 안의 마크 등)라 지워지면 안 될 때만 \'유지\'를 고릅니다.')
+    logo_auto = forms.BooleanField(label='새 기준으로 자동 정리', required=False, widget=forms.CheckboxInput(attrs={'data-logo-option': ''}),
+                                   help_text='이 심볼은 다듬어 올린 그대로 쓰고 있습니다. 켜면 여백·배경·크기를 자동으로 맞춥니다.')
     memo = forms.CharField(label='참고 메모', required=False, widget=forms.Textarea(attrs={'rows': 3}))
     remove_logo = forms.BooleanField(label='기존 심볼 삭제', required=False)
     revision = forms.CharField(required=False, widget=forms.HiddenInput)
