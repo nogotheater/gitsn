@@ -46,6 +46,17 @@ class NormalizeScenarios(SimpleTestCase):
         self.assertEqual(canvas.getpixel((256, 256))[3], 255)              # 가운데 흰 원(심볼의 일부)은 남는다
         self.assertEqual(canvas.getpixel((256, 256))[:3], (255, 255, 255))
 
+    def test_thin_outline_keeps_the_white_inside_on_a_large_original(self):
+        # 큰 원본은 거친 격자에서 배경을 찾는다(2026-11-17, 무료 서버 속도). 가는 테두리도 벽으로 남아 안쪽 흰색이 새지 않는다.
+        source = Image.new('RGB', (2000, 2000), 'white')
+        draw = ImageDraw.Draw(source)
+        draw.ellipse((200, 200, 1800, 1800), outline=(0, 0, 0), width=3)
+        draw.rectangle((900, 900, 1100, 1100), fill=(0, 80, 160))
+        canvas, info = normalize(source)
+        self.assertEqual(canvas.getpixel((256, 200))[3], 255)   # 테두리 안쪽 흰 부분
+        self.assertEqual(canvas.getpixel((3, 3))[3], 0)         # 바깥 흰 배경
+        self.assertLess(abs(info['art_px'][0] - 1601), 8)       # 경고 판단은 원본 크기 기준
+
     def test_tight_and_loose_crops_end_up_the_same_size(self):
         tight = drawn((300, 300), (0, 0, 0, 0), [('ellipse', (0, 0, 299, 299), (20, 120, 60, 255))], 'RGBA')
         loose = drawn((900, 900), (0, 0, 0, 0), [('ellipse', (300, 300, 599, 599), (20, 120, 60, 255))], 'RGBA')

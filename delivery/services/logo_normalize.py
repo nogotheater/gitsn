@@ -10,7 +10,7 @@
 손으로 고치는 값은 크기(작게·보통·크게)와 배경(지우기·유지) 두 가지뿐이다. numpy 없이 Pillow만 쓴다.
 올리는 파일은 기관 이름 글자 없이 심볼만 있는 것이다(2026-11-17 형우: '우리가 심볼 형태로만 업로드'). 글자를 잘라내지 않는다.
 """
-from PIL import Image, ImageChops, ImageDraw, ImageOps
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageOps
 
 TARGET = 0.77           # 정사각 로고가 차지하는 칸의 비율(기존 심볼 가운데값)
 LIMIT = 0.90            # 어떤 로고도 이보다 넓거나 높게 놓지 않는다(여백 최소 5%)
@@ -18,6 +18,8 @@ SIZE_FACTOR = {'small': 0.88, 'normal': 1.0, 'large': 1.12}
 LIGHT = 232             # 이보다 밝은 배경색이면 '흰 배경'으로 보고 지운다
 TOLERANCE = 18          # 배경색과 이만큼 가까우면 배경
 SOFT = 40               # 경계 부드럽게(배경과 거리가 TOLERANCE~TOLERANCE+SOFT 사이면 반투명)
+WORK = 1024             # 이보다 큰 원본은 먼저 줄여서 다룬다(결과 캔버스는 512px)
+GRID = 256              # 배경이 가장자리와 이어졌는지는 이 크기의 거친 격자에서 찾는다(무료 서버에서 빠르게)
 LOW_RES = 120           # 그림(여백 뺀 부분)의 긴 변이 이보다 작으면 '해상도 낮음'
 HEAVY = 0.82            # 그림 상자를 이 비율 넘게 꽉 채운 로고(꽉 찬 네모)는 같은 면적이어도 커 보여서 조금 줄인다(원은 약 0.79라 그대로)
 
@@ -55,18 +57,27 @@ def detect_background(image):
 
 
 def remove_background(image, color):
-    """가장자리에서 이어진 배경색 영역만 투명하게. 경계는 거리만큼 반투명."""
+    """가장자리에서 이어진 배경색 영역만 투명하게. 경계는 거리만큼 반투명.
+
+    '이어졌는지'는 GRID 크기의 거친 격자에서 찾는다(Pillow의 채우기는 파이썬이라 큰 그림에서 느리다:
+    2026-11-17 무료 서버에서 900px 그림 미리보기에 7.6초). 칸 안에 배경이 아닌 점이 하나라도 있으면 벽으로 봐서
+    가는 테두리도 새지 않는다. 벽에 붙은 한 칸은 넓혀서 지우되, 실제로 배경색인 점만 지운다.
+    """
     rgb = image.convert('RGB')
     distance = ImageChops.difference(rgb, Image.new('RGB', rgb.size, color))
     r, g, b = distance.split()
     distance = ImageChops.lighter(ImageChops.lighter(r, g), b)            # 채널 중 가장 큰 차이
     near = distance.point(lambda d: 255 if d <= TOLERANCE + SOFT else 0)  # 배경 또는 경계 후보
-    region = near.copy()
-    width, height = region.size
-    for point in _border_points(width, height, max(1, min(width, height) // 128)):
+    width, height = image.size
+    scale = min(1.0, GRID / max(width, height))
+    small = (max(1, round(width * scale)), max(1, round(height * scale)))
+    wall = ImageChops.invert(near).resize(small, Image.Resampling.BOX).point(lambda v: 255 if v else 0)
+    region = ImageChops.invert(wall)                                       # 통째로 배경인 칸만 255
+    for point in _border_points(small[0], small[1], 1):
         if region.getpixel(point) == 255:
             ImageDraw.floodfill(region, point, 128)
-    connected = region.point(lambda v: 255 if v == 128 else 0)           # 가장자리에서 이어진 부분만
+    reached = region.point(lambda v: 255 if v == 128 else 0).filter(ImageFilter.MaxFilter(3))
+    connected = ImageChops.multiply(reached.resize((width, height), Image.Resampling.NEAREST), near)
     ramp = distance.point(lambda d: 0 if d <= TOLERANCE else (255 if d >= TOLERANCE + SOFT else int((d - TOLERANCE) * 255 / SOFT)))
     new_alpha = ImageChops.multiply(image.getchannel('A'), ramp)
     alpha = Image.composite(new_alpha, image.getchannel('A'), connected)
@@ -78,6 +89,9 @@ def remove_background(image, color):
 def normalize(source, *, size='normal', background='remove', canvas=512):
     """source: 열린 Pillow 이미지. (정사각 RGBA 캔버스, 정보 dict)."""
     image = ImageOps.exif_transpose(source).convert('RGBA')
+    original_scale = min(1.0, WORK / max(image.size))
+    if original_scale < 1:
+        image = image.resize((max(1, round(image.width * original_scale)), max(1, round(image.height * original_scale))), Image.Resampling.LANCZOS)
     kind, color = detect_background(image)
     removed = False
     if kind == 'solid' and background == 'remove' and min(color) >= LIGHT:
@@ -96,6 +110,8 @@ def normalize(source, *, size='normal', background='remove', canvas=512):
     if not box:
         # 지우고 나니 아무것도 안 남는 그림(통째로 흰 그림 등)은 사라지게 두지 않고 올린 그대로 쓴다
         image = ImageOps.exif_transpose(source).convert('RGBA')
+        if original_scale < 1:
+            image = image.resize((max(1, round(image.width * original_scale)), max(1, round(image.height * original_scale))), Image.Resampling.LANCZOS)
         removed = False
         box = (0, 0) + image.size
     art = image.crop(box)
@@ -122,7 +138,8 @@ def normalize(source, *, size='normal', background='remove', canvas=512):
     out = Image.new('RGBA', (canvas, canvas), (0, 0, 0, 0))
     out.paste(art, ((canvas - target[0]) // 2, (canvas - target[1]) // 2), art)
     warnings = []
-    if max(width, height) < LOW_RES:
+    source_px = (round(width / original_scale), round(height / original_scale))   # 원본 기준 그림 크기
+    if max(source_px) < LOW_RES:
         warnings.append('low_res')
     if aspect > 4:
         warnings.append('too_wide')
@@ -130,6 +147,6 @@ def normalize(source, *, size='normal', background='remove', canvas=512):
         warnings.append('too_tall')
     if kind == 'solid' and not removed and background == 'remove':
         warnings.append('colored_background')
-    return out, {'background': kind, 'removed': removed, 'art_px': (width, height), 'aspect': round(aspect, 2),
+    return out, {'background': kind, 'removed': removed, 'art_px': source_px, 'aspect': round(aspect, 2),
                  'coverage': round(coverage, 2),
                  'warnings': warnings}
