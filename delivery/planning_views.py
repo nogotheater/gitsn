@@ -79,7 +79,7 @@ def logo_preview(request):
         except (OSError, ValueError):
             raise Http404 from None
         fit = 'auto' if obj.logo_fit == 'auto' or request.POST.get('logo_auto') else 'as_is'
-    web, _printed, info = make(data, fit, size, background)
+    web, _printed, info = make(data, fit, size, background, need_print=False)
     response = JsonResponse({'image': 'data:image/webp;base64,' + base64.b64encode(web).decode('ascii') if web else '',
                              'fit': fit, 'warnings': [LOGO_WARNINGS.get(code, code) for code in info.get('warnings', [])]})
     response['Cache-Control'] = 'private, no-store'

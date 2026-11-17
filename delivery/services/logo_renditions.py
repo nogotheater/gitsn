@@ -34,11 +34,10 @@ def rendition_key(obj):
 
 
 def _webp(image):
-    """작은 WebP: 손실 압축(q80)과 무손실 중 작은 쪽(색이 단순한 심볼은 무손실이 더 작기도 하다)."""
-    lossy, lossless = BytesIO(), BytesIO()
-    image.save(lossy, format='WEBP', quality=80, method=6)
-    image.save(lossless, format='WEBP', lossless=True, method=6)
-    return min(lossy.getvalue(), lossless.getvalue(), key=len)
+    """작은 WebP(q80). method=4: 6보다 100배 빠르고 크기는 2%만 크다(2026-11-17 측정: 104개 다시 만들기가 무료 서버에서 142초 걸렸다)."""
+    out = BytesIO()
+    image.save(out, format='WEBP', quality=80, method=4)
+    return out.getvalue()
 
 
 def open_logo(data):
@@ -55,7 +54,7 @@ def open_logo(data):
         return None
 
 
-def make(data, fit='as_is', size='normal', background='remove'):
+def make(data, fit='as_is', size='normal', background='remove', need_print=True):
     """(web WebP, print PNG, info). 읽을 수 없는 그림이면 빈 값(카드는 글자 타일, 인쇄는 심볼 없음)."""
     original = open_logo(data)
     if original is None:
@@ -75,7 +74,8 @@ def make(data, fit='as_is', size='normal', background='remove'):
             web.thumbnail((WEB_SIZE, WEB_SIZE), Image.Resampling.LANCZOS)
             info = {'warnings': []}
         out_print = BytesIO()
-        printed.save(out_print, format='PNG', optimize=True)
+        if need_print:
+            printed.save(out_print, format='PNG')
         return _webp(web), out_print.getvalue(), info
     except (OSError, ValueError, Image.DecompressionBombError):
         return b'', b'', {'warnings': ['unreadable']}
