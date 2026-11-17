@@ -16,9 +16,40 @@
 .logo-tile.is-zoom{width:96px;height:96px;margin-left:12px}
 .logo-warnings{margin:0 0 8px;padding-left:18px;color:#b4501e;font-size:14px}.logo-warnings:empty{display:none}
 .button.danger-text{color:var(--error)}.button.danger-text:hover{background:var(--error-bg)}
-/* 월별 보기(2026-11-17 형우) */
-.month-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
-.month-chip{display:inline-flex;align-items:center;min-height:36px;padding:6px 14px;border:1px solid var(--border-control);border-radius:999px;font-size:14px;color:var(--text-body);text-decoration:none;background:#fff}
-.month-chip:hover{background:var(--surface-hover)}
-.month-chip.is-active{background:var(--brand-action);border-color:var(--brand-action);color:#fff}
-.month-chip.clear{border-style:dashed;color:var(--text-secondary)}
+/* 기간 보기(2026-11-17 형우, 시안 7): 등록월·계약월, 연도, 열두 달 막대 */
+.period{border:1px solid var(--border-subtle);border-radius:var(--radius-control);background:#fff;padding:20px 24px 14px;margin-top:20px}
+.period-row{display:flex;align-items:center;gap:16px 20px;flex-wrap:wrap}.period-row h2{font-size:16px;margin:0}
+.period-note{font-size:12px;color:var(--text-secondary)}
+.seg{display:inline-flex}.seg a,.seg span{display:inline-flex;align-items:center;min-height:36px;padding:6px 14px;border:1px solid var(--border-control);background:#fff;color:var(--text-body);font-size:14px;text-decoration:none}
+.seg>*+*{margin-left:-1px}.seg>:first-child{border-radius:var(--radius-control) 0 0 var(--radius-control)}.seg>:last-child{border-radius:0 var(--radius-control) var(--radius-control) 0}
+.seg a.on{background:var(--brand-action);border-color:var(--brand-action);color:#fff;font-weight:600;position:relative;z-index:1}.seg .off{color:var(--gray-400);border-color:var(--border-subtle)}
+.seg.small a,.seg.small span{min-height:32px;padding:4px 12px;font-size:13px}
+.period-years{display:flex;align-items:center;gap:2px;margin-left:auto}.period-years a{padding:6px 10px;font-size:14px;color:var(--text-secondary);text-decoration:none;border-bottom:2px solid transparent}
+.period-years a.on{color:var(--text-heading);font-weight:600;border-bottom-color:var(--text-heading)}
+.period-older{position:relative;font-size:14px;color:var(--text-secondary)}.period-older summary{cursor:pointer;padding:6px 10px;list-style:none}.period-older summary::after{content:' ▾'}
+.period-older>div{position:absolute;right:0;top:100%;z-index:5;background:#fff;border:1px solid var(--border-subtle);border-radius:var(--radius-control);padding:6px;display:grid;grid-template-columns:repeat(3,auto);gap:2px}
+.period-chart{position:relative;height:276px;margin-top:12px;overflow-x:auto}
+.period-grid{position:absolute;left:0;right:0;border-top:1px dashed var(--gray-200)}.period-grid.top{top:56px}.period-grid.mid{top:143px}
+.period-base{position:absolute;left:0;right:0;bottom:42px;border-top:1px solid var(--gray-200)}
+.period-cols{position:absolute;inset:0;display:grid;grid-template-columns:repeat(12,minmax(48px,1fr))}
+.period-col{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding-bottom:42px;position:relative;text-decoration:none;color:inherit;border-radius:var(--radius-control)}
+.period-col:hover{background:var(--surface-hover)}.period-col.future{pointer-events:none}
+.period-top{display:flex;flex-direction:column;align-items:center;gap:2px;margin-bottom:6px;font-size:12px;line-height:1.2;white-space:nowrap;font-variant-numeric:tabular-nums}
+.period-top .a{color:#3F7FC0}.period-top .n{color:var(--brand-action);font-weight:700}
+.period-bar{width:12px;display:flex;flex-direction:column;border-radius:var(--radius-control) var(--radius-control) 0 0;overflow:hidden}
+.period-bar i{display:block;width:100%}.period-bar .new,.period-legend i.new{background:var(--brand-action)}
+.period-bar .add,.period-legend i.add{background:repeating-linear-gradient(-45deg,color-mix(in srgb,var(--brand-action) 45%,#fff) 0 3px,color-mix(in srgb,var(--brand-action) 20%,#fff) 3px 8px)}
+.period-zero{font-size:13px;color:var(--gray-400);margin-bottom:4px}
+.period-mon{position:absolute;bottom:0;height:38px;padding-top:6px;font-size:14px;color:var(--text-secondary);display:flex;flex-direction:column;align-items:center;line-height:1.1}
+.period-mon em{font-style:normal;font-size:10px;color:var(--brand-action);font-weight:600;margin-top:2px}
+.period-col.sel .period-mon{color:var(--brand-action);font-weight:700}.period-col.sel .period-top{font-size:13px}.period-col.future .period-mon{color:var(--gray-400)}
+.period-empty{margin:16px 0}
+.period-foot{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;border-top:1px solid var(--border-subtle);padding-top:12px;margin-top:4px}
+.period-legend{display:flex;gap:16px;font-size:13px;color:var(--text-secondary)}.period-legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.period-fix{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-secondary)}.period-fix a{text-decoration:none}.period-fix a.on{outline:2px solid currentColor}
+.period-result{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin:28px 0 4px}.period-result h2{margin:0;font-size:20px}
+.period-clear{margin-left:auto;font-size:14px;color:var(--text-secondary);text-decoration:none}
+.period-day{display:flex;gap:8px;align-items:baseline;margin:20px 0 0;padding-bottom:8px;border-bottom:1px solid var(--border-subtle);font-size:15px;font-weight:600}.period-day span{font-weight:400;font-size:13px;color:var(--text-secondary)}
+.period-day+.customer-grid{margin-top:16px}
+.period-date{font-size:13px;color:var(--text-secondary);margin-top:-4px}
+@media(max-width:639px){.period{padding:16px}.period-years{margin-left:0}.period-cols{grid-template-columns:repeat(var(--n),56px);right:auto}.period-grid,.period-base{right:auto;width:calc(var(--n) * 56px)}}

@@ -111,20 +111,35 @@ def customer_list(request):
         rows = rows.filter(organization__official_name__icontains=query)
     if category in Category.values:
         rows = rows.filter(category=category)
-    # 월별 보기(2026-11-17 형우): 등록월·계약월 두 기준, 신규 고객사 / 계약 추가
-    from .services.customer_months import month_index, note_for, _month
-    basis = request.GET.get('basis') if request.GET.get('basis') in {'registered', 'contract'} else 'registered'
-    month = request.GET.get('month', '')
-    kind = request.GET.get('kind') if request.GET.get('kind') in {'new', 'added'} else ''
-    marks, months = month_index(basis)
-    month_counts = {key: (new, added) for key, _label, new, added in months}
-    if month not in month_counts:
-        month, kind = '', ''
+    # 기간 보기(2026-11-17 형우, 시안 7로 확정): 등록월·계약월, 연도, 열두 달 막대('계약 N건 / 신규 N곳'), 정리할 자료
+    from urllib.parse import urlencode
+    from .services.customer_months import BASELINE_UNTIL, chart, month_index, month_label, years_of, _month
+    today = timezone.localdate()
+    params = request.GET
+    basis = params.get('basis') if params.get('basis') in {'registered', 'contract'} else 'registered'
+    marks, stats = month_index(basis)
+    month = params.get('month', '')
+    if not params and _month(today) in stats:
+        month = _month(today)          # 처음 열면 '등록월 · 이번 달'(이번 달에 넣은 것이 바로 보이게). 없으면 전체.
+    if month not in stats:
+        month = ''
+    kind = params.get('kind') if month and params.get('kind') in {'new', 'added'} else ''
+    years = years_of(stats, basis, today)
+    try:
+        year = int(params.get('year') or (month[:4] if month[:1].isdigit() else years[0]))
+    except ValueError:
+        year = years[0]
+
+    def link(**changes):
+        state = {'q': query, 'category': category, 'basis': basis, 'year': year, 'month': month or 'all', 'kind': kind}
+        state.update(changes)
+        return '?' + urlencode({key: value for key, value in state.items() if value not in ('', None)})
+
     if month:
         ids = [cid for cid, customer_marks in marks.items() if month in customer_marks and (not kind or customer_marks[month][0] == kind)]
-        day_of = lambda customer: marks[customer.pk][month][1] or customer.created_at.date()
+        day_of = lambda customer: marks[customer.pk][month][1] or timezone.localtime(customer.created_at).date()
         rows = sorted(rows.filter(pk__in=ids), key=lambda customer: (-day_of(customer).toordinal(), customer.organization.official_name))
-    page = Paginator(rows, 24).get_page(request.GET.get('page'))
+    page = Paginator(rows, 24).get_page(params.get('page'))
     # 심볼 없는 고객사는 계약 당사자의 심볼을 빌려 쓴다(납품현황과 같은 규칙, 2026-11-17 형우)
     from .services.logo_renditions import logo_fallbacks
     borrowed = logo_fallbacks([{'kind': 'customer', 'id': str(c.pk), 'has_logo': bool(c.logo)} for c in page], 'employee')
@@ -134,13 +149,41 @@ def customer_list(request):
         customer.product_badges = sorted(badges.values(), key=lambda product: product_sort_key(product.marker, product.name, product.pk))
         customer.needs_location = customer.category in LOCATION_CATEGORIES and not customer.location_code
         customer.borrowed_logo = borrowed.get(('customer', str(customer.pk)), '')
-        customer.month_note = note_for(basis, *marks[customer.pk][month]) if month else ''
-    this_month = _month(timezone.localdate())
+        customer.month_kind, day = marks[customer.pk][month] if month else ('', None)
+        customer.month_day = day
+        customer.month_date = f'{day:%Y.%m.%d} 계약' if day and basis == 'contract' and month[:1].isdigit() else ''
+    # 등록월은 하루에 몰아서 넣으니 날짜별로 묶는다. 계약월은 날짜가 흩어져 카드 안에 계약일을 넣는다.
+    if month and basis == 'registered' and month[:1].isdigit():
+        groups = []
+        for customer in page:
+            heading = f'{customer.month_day.month}월 {customer.month_day.day}일'
+            if not groups or groups[-1]['heading'] != heading:
+                groups.append({'heading': heading, 'items': []})
+            groups[-1]['items'].append(customer)
+    else:
+        groups = [{'heading': '', 'items': list(page)}] if page.object_list else []
+    fix_key = 'nodate' if basis == 'contract' else 'base'
+    fix_count = stats.get(fix_key, {}).get('new', 0)
+    shown_years = years[:4] if year in years[:4] else years[:3] + [year]
+    word = '계약' if basis == 'contract' else '등록'
+    row = stats.get(month, {'new': 0, 'added': 0})
     return render(request, 'planning/customer_list.html', {
-        'page': page, 'query': query, 'selected_category': category, 'categories': Category.choices,
-        'basis': basis, 'month': month, 'kind': kind, 'months': months,
-        'month_new': month_counts.get(month, (0, 0))[0], 'month_added': month_counts.get(month, (0, 0))[1],
-        'this_month': this_month, 'this_month_counts': month_counts.get(this_month, (0, 0))})
+        'page': page, 'groups': groups, 'query': query, 'selected_category': category, 'categories': Category.choices,
+        'basis': basis, 'month': month, 'kind': kind, 'year': year,
+        'basis_urls': {key: link(basis=key, year='', month='all', kind='') for key in ('registered', 'contract')},
+        'years': [{'year': y, 'on': y == year, 'url': link(year=y, month='all', kind='')} for y in shown_years],
+        'older_years': [{'year': y, 'on': y == year, 'url': link(year=y, month='all', kind='')} for y in years if y not in shown_years],
+        'chart': chart(stats, basis, year, month, today, lambda key: link(month=key, kind='', year=int(key[:4])))[0],
+        'baseline_next': f'{BASELINE_UNTIL.month}월 {BASELINE_UNTIL.day + 1}일',
+        'fix_key': fix_key, 'fix_count': fix_count, 'fix_label': '계약일 미입력' if basis == 'contract' else '기존 자료',
+        'fix_url': link(month=fix_key, kind=''),
+        'result_title': (f'{month_label(month)} {word} · {row["new"] + row["added"]}곳' if month[:1].isdigit()
+                         else f'{month_label(month)} · {row["new"]}곳') if month else '',
+        'result_segments': [{'key': '', 'label': '전체', 'count': row['new'] + row['added'], 'on': not kind, 'url': link(kind='')},
+                            {'key': 'new', 'label': '신규', 'count': row['new'], 'on': kind == 'new', 'url': link(kind='new')},
+                            {'key': 'added', 'label': '계약 추가', 'count': row['added'], 'on': kind == 'added', 'url': link(kind='added')}]
+                           if month[:1].isdigit() else [],
+        'clear_url': link(month='all', kind='')})
 
 
 def presentation_initial(obj, name):

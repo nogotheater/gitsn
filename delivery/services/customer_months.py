@@ -34,12 +34,17 @@ def month_label(key):
 
 
 def month_index(basis):
-    """{고객사 id: {월 키: ('new' | 'added', 그 달의 대표 날짜)}} 와 월 목록 [(키, 이름, 신규 수, 추가 수)]."""
+    """{고객사 id: {월 키: ('new' | 'added', 그 달의 대표 날짜)}}, 월별 숫자 {월 키: {'new': 신규 고객사 수,
+    'added': 계약 추가 고객사 수, 'contracts': 기존 고객사의 추가 계약 건수}}.
+
+    '계약 N건'(2026-11-17 형우 (나)): 신규 고객사의 계약은 빼고, 기존 고객사가 그 달에 추가한 계약 건수.
+    """
     customers = {row['id']: _local_day(row['created_at'])
                  for row in Customer.objects.filter(merged_into__isnull=True).values('id', 'created_at')}
-    contracts = Contract.objects.filter(customer_id__in=customers, superseded_by__isnull=True).values(
-        'customer_id', 'created_at', 'contract_date')
+    contracts = list(Contract.objects.filter(customer_id__in=customers, superseded_by__isnull=True).values(
+        'customer_id', 'created_at', 'contract_date'))
     marks = defaultdict(dict)
+    added_contracts = defaultdict(int)
     if basis == 'contract':
         dated = defaultdict(list)
         for row in contracts:
@@ -48,12 +53,15 @@ def month_index(basis):
             else:
                 marks[row['customer_id']].setdefault('nodate', ('new', None))
         for customer_id, days in dated.items():
-            first = min(days)
+            first = _month(min(days))
             for day in sorted(days, reverse=True):
                 key = _month(day)
-                kind = 'new' if _month(first) == key else 'added'
-                if key not in marks[customer_id] or kind == 'new':
-                    marks[customer_id][key] = (kind, day)
+                if key == first:
+                    marks[customer_id][key] = ('new', min(d for d in days if _month(d) == key))
+                else:
+                    added_contracts[key] += 1
+                    if key not in marks[customer_id]:
+                        marks[customer_id][key] = ('added', day)
     else:
         for customer_id, created in customers.items():
             marks[customer_id]['base' if created <= BASELINE_UNTIL else _month(created)] = ('new', created)
@@ -64,18 +72,45 @@ def month_index(basis):
                 continue
             key = _month(created)
             if _month(customer_created) == key and customer_created > BASELINE_UNTIL:
-                continue                      # 그 달에 새로 등록한 고객사의 첫 계약은 '신규'에 이미 들어 있다
+                continue                      # 그 달에 새로 등록한 고객사의 계약은 '신규'에 들어 있다
+            added_contracts[key] += 1
             current = marks[row['customer_id']].get(key)
             if current is None or (current[0] == 'added' and current[1] < created):
                 marks[row['customer_id']][key] = ('added', created)
-    counts = defaultdict(lambda: [0, 0])
+    stats = defaultdict(lambda: {'new': 0, 'added': 0, 'contracts': 0})
     for customer_marks in marks.values():
         for key, (kind, _day) in customer_marks.items():
-            counts[key][0 if kind == 'new' else 1] += 1
-    order = sorted((key for key in counts if key not in {'base', 'nodate'}), reverse=True)
-    order += [key for key in ('nodate', 'base') if key in counts]
-    months = [(key, month_label(key), counts[key][0], counts[key][1]) for key in order]
-    return marks, months
+            stats[key]['new' if kind == 'new' else 'added'] += 1
+    for key, count in added_contracts.items():
+        stats[key]['contracts'] = count
+    return marks, dict(stats)
+
+
+def years_of(stats, basis, today):
+    years = sorted({int(key[:4]) for key in stats if key[:1].isdigit()} | ({today.year} if basis == 'registered' else set()), reverse=True)
+    return years or [today.year]
+
+
+def chart(stats, basis, year, selected, today, link):
+    """그 해 열두 달(등록월은 처음 입력한 자료 다음 달부터) 막대. 높이 = 신규 곳 + 추가 계약 건, 가장 큰 달이 150px."""
+    first = BASELINE_UNTIL.month if basis == 'registered' and year == BASELINE_UNTIL.year else 1
+    if basis == 'registered' and year < BASELINE_UNTIL.year:
+        return [], 0
+    months = []
+    for month in range(first, 13):
+        key = f'{year:04d}-{month:02d}'
+        row = stats.get(key, {'new': 0, 'added': 0, 'contracts': 0})
+        future = (year, month) > (today.year, today.month)
+        months.append({'key': key, 'month': month, 'new': row['new'], 'contracts': row['contracts'],
+                       'future': future, 'current': (year, month) == (today.year, today.month),
+                       'selected': key == selected, 'url': link(key)})
+    peak = max([m['new'] + m['contracts'] for m in months] + [1])
+    for m in months:
+        total = m['new'] + m['contracts']
+        m['height'] = round(150 * total / peak) if total else 0
+        m['h_new'] = round(m['height'] * m['new'] / total) if total else 0
+        m['h_added'] = m['height'] - m['h_new']
+    return months, first
 
 
 def note_for(basis, kind, day):
