@@ -10,6 +10,7 @@ from django.db.models import Prefetch
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_http_methods
 from .forms import site_display_of, PresentationForm, ContractForm, ProductFormSet, SiteFormSet, ProductCatalogForm, DuplicateSearchForm, DuplicateContractFormSet
@@ -110,6 +111,19 @@ def customer_list(request):
         rows = rows.filter(organization__official_name__icontains=query)
     if category in Category.values:
         rows = rows.filter(category=category)
+    # 월별 보기(2026-11-17 형우): 등록월·계약월 두 기준, 신규 고객사 / 계약 추가
+    from .services.customer_months import month_index, note_for, _month
+    basis = request.GET.get('basis') if request.GET.get('basis') in {'registered', 'contract'} else 'registered'
+    month = request.GET.get('month', '')
+    kind = request.GET.get('kind') if request.GET.get('kind') in {'new', 'added'} else ''
+    marks, months = month_index(basis)
+    month_counts = {key: (new, added) for key, _label, new, added in months}
+    if month not in month_counts:
+        month, kind = '', ''
+    if month:
+        ids = [cid for cid, customer_marks in marks.items() if month in customer_marks and (not kind or customer_marks[month][0] == kind)]
+        day_of = lambda customer: marks[customer.pk][month][1] or customer.created_at.date()
+        rows = sorted(rows.filter(pk__in=ids), key=lambda customer: (-day_of(customer).toordinal(), customer.organization.official_name))
     page = Paginator(rows, 24).get_page(request.GET.get('page'))
     # 심볼 없는 고객사는 계약 당사자의 심볼을 빌려 쓴다(납품현황과 같은 규칙, 2026-11-17 형우)
     from .services.logo_renditions import logo_fallbacks
@@ -120,7 +134,13 @@ def customer_list(request):
         customer.product_badges = sorted(badges.values(), key=lambda product: product_sort_key(product.marker, product.name, product.pk))
         customer.needs_location = customer.category in LOCATION_CATEGORIES and not customer.location_code
         customer.borrowed_logo = borrowed.get(('customer', str(customer.pk)), '')
-    return render(request, 'planning/customer_list.html', {'page': page, 'query': query, 'selected_category': category, 'categories': Category.choices})
+        customer.month_note = note_for(basis, *marks[customer.pk][month]) if month else ''
+    this_month = _month(timezone.localdate())
+    return render(request, 'planning/customer_list.html', {
+        'page': page, 'query': query, 'selected_category': category, 'categories': Category.choices,
+        'basis': basis, 'month': month, 'kind': kind, 'months': months,
+        'month_new': month_counts.get(month, (0, 0))[0], 'month_added': month_counts.get(month, (0, 0))[1],
+        'this_month': this_month, 'this_month_counts': month_counts.get(this_month, (0, 0))})
 
 
 def presentation_initial(obj, name):
