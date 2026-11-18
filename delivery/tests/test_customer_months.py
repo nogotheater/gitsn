@@ -74,12 +74,12 @@ class CustomerPeriodScenarios(TestCase):
         school.save(update_fields=['category'])
         self.contract(school, (2026, 10, 1), date(2026, 6, 20))
         june = self.page(year=2026, month='all')
-        tip = june[june.index('6월 고객 분류별 제품'):]
+        tip = june[june.index('6월 <small>고객 분류별 제품'):]
         tip = tip[:tip.index('</a>')]
         self.assertLess(tip.index('중앙정부'), tip.index('교육'))
         self.assertLess(tip.index('>I</span>1건'), tip.index('>C</span>2건'))             # 제품 순서 I, S, B, D, P, H, C
         self.assertIn('>C</span>1건', tip[tip.index('교육'):])
-        self.assertNotIn('7월 고객 분류별 제품', june)
+        self.assertNotIn('7월 <small>고객 분류별 제품', june)
 
     def test_contract_month_counts_added_contracts_and_collects_missing_dates(self):
         a = self.customer('월 계약 기관', (2026, 10, 1))
