@@ -43,37 +43,43 @@ class CustomerPeriodScenarios(TestCase):
     def page(self, **query):
         return self.client.get('/planning/', query).content.decode()
 
-    def test_registered_month_opens_on_this_month_with_day_groups(self):
-        old = self.customer('월 기존 기관', (2026, 10, 1))                 # 처음 옮겨 온 자료
+    def test_only_contract_month_remains_and_opens_on_this_month(self):
+        # 2026-11-18 형우 "기간에서 등록월은 없애자. 계약월로만 보여도 될 것 같아" → 등록월 기준의 검사(날짜별 묶음, 기존 자료)는 뺐다
+        old = self.customer('월 기존 기관', (2026, 10, 1))
         self.contract(old, (2026, 10, 1), date(2025, 7, 16))
-        self.contract(old, (2026, 11, 10), date(2026, 11, 3))              # 11월에 기존 고객사가 계약 추가
+        self.contract(old, (2026, 11, 10), date(2026, 11, 3))
         new = self.customer('월 신규 기관', (2026, 11, 5))
-        self.contract(new, (2026, 11, 5), date(2026, 10, 20))              # 11월에 새 고객사(계약은 10월) — '계약 N건'에 안 셈
-        first = self.page()                                                 # 처음 열면 등록월 · 이번 달
-        self.assertNotIn('<select id="basis"', first)
-        self.assertIn('10월 23일부터(그 전은 기존 자료)', first)
+        self.contract(new, (2026, 11, 5), date(2026, 11, 12))
+        first = self.page()                                                  # 처음 열면 이번 달(계약일 기준)
+        self.assertNotIn('등록월', first)
+        self.assertNotIn('기존 자료', first)
+        self.assertIn('계약서의 계약일 기준', first)
+        self.assertIn('2026년 11월 계약 · 2곳', first)
         self.assertIn('계약 1건', first)
         self.assertIn('신규 1곳', first)
         self.assertIn('이번 달', first)
-        self.assertIn('2026년 11월 등록 · 2곳', first)
-        self.assertIn('신규 1', first)
-        self.assertIn('계약 추가 1', first)
-        self.assertLess(first.index('11월 10일'), first.index('11월 5일'))  # 날짜별로 묶고 최근 날짜 먼저
-        self.assertIn('월 기존 기관', first)
-        self.assertIn('월 신규 기관', first)
-        self.assertIn('기존 자료 1', first)
-        self.assertNotIn('등록 자료 <strong>', first)
-        only_new = self.page(basis='registered', month='2026-11', kind='new')
-        self.assertIn('월 신규 기관', only_new)
-        self.assertNotIn('월 기존 기관', only_new)
-        everything = self.page(basis='registered', month='all')
-        self.assertIn('등록 자료 <strong>2</strong>개', everything)
-        self.assertNotIn('✕ 기간 해제', everything)
-        base = self.page(basis='registered', month='base')
-        self.assertIn('기존 자료(2026.10.22까지 처음 입력) · 1곳', base)
-        self.assertIn('월 기존 기관', base)
-        self.assertNotIn('월 신규 기관', base)
-        self.assertIn('이 해에는 처음 입력한 기존 자료만 있습니다', self.page(basis='registered', year=2025, month='all'))
+        self.assertNotIn('period-day', first)
+        self.assertIn('2026년 11월 계약 · 2곳', self.page(basis='registered', month='2026-11'))   # 예전 주소도 계약월로
+
+    def test_bar_hover_lists_products_by_customer_category(self):
+        # 2026-11-18 형우: 그래프에 마우스를 올리면 고객 분류별로 '중앙정부 I 몇 건 C 몇 건'
+        i = Product.objects.create(code='months-i', name='가상 월 I', marker='I')
+        ministry = Customer.objects.create(organization=Organization.objects.create(official_name='월 가상 부처'), category='central', partner_public=True)
+        for products in ([self.c], [self.c, i]):
+            contract = Contract.objects.create(customer=ministry, contracting_party=ministry.organization, is_active=True, contract_date=date(2026, 6, 3))
+            for product in products:
+                ContractProduct.objects.create(contract=contract, product=product, quantity=1)
+        school = self.customer('월 가상 학교', (2026, 10, 1))
+        school.category = 'education'
+        school.save(update_fields=['category'])
+        self.contract(school, (2026, 10, 1), date(2026, 6, 20))
+        june = self.page(year=2026, month='all')
+        tip = june[june.index('6월 고객 분류별 제품'):]
+        tip = tip[:tip.index('</a>')]
+        self.assertLess(tip.index('중앙정부'), tip.index('교육'))
+        self.assertLess(tip.index('>I</span>1건'), tip.index('>C</span>2건'))             # 제품 순서 I, S, B, D, P, H, C
+        self.assertIn('>C</span>1건', tip[tip.index('교육'):])
+        self.assertNotIn('7월 고객 분류별 제품', june)
 
     def test_contract_month_counts_added_contracts_and_collects_missing_dates(self):
         a = self.customer('월 계약 기관', (2026, 10, 1))
@@ -99,6 +105,21 @@ class CustomerPeriodScenarios(TestCase):
         self.assertNotIn('월 계약 기관', missing)
         self.assertIn('월 계약 기관', self.page(basis='contract', month='1999-01'))   # 없는 달은 무시하고 전체
 
+
+    def test_customer_with_an_undated_contract_is_not_counted_as_new_by_contract_month(self):
+        # 2026-11-18 형우: 울산광역시(I 2026.10.15, C·S 계약일 미입력)가 10월 신규로 잡혔다 → 빈 계약이 더 먼저일 수 있으니 '계약 추가'
+        ulsan = self.customer('월 날짜 섞인 기관', (2026, 10, 1))
+        self.contract(ulsan, (2026, 10, 1), None)
+        self.contract(ulsan, (2026, 10, 1), date(2026, 10, 15))
+        listing = self.page(basis='contract', year=2026, month='all')
+        self.assertIn('계약 1건', listing)
+        self.assertNotIn('신규 1곳', listing)
+        self.assertIn('⚠ 계약일 미입력 1', listing)
+        october = self.page(basis='contract', month='2026-10')
+        self.assertIn('2026년 10월 계약 · 1곳', october)
+        self.assertIn('계약 추가 1', october)
+        self.assertIn('신규 0', october)
+        self.assertIn('2026.10.15 계약', october)
 
     @override_settings(PERFORMANCE_PAGE_CACHE=True)
     def test_list_reuses_its_material_until_data_changes(self):

@@ -74,16 +74,19 @@ class PlanningBrowserScenarios(StaticLiveServerTestCase):
 class CustomerPeriodBrowserScenarios(StaticLiveServerTestCase):
     def test_period_buttons_change_the_list_without_reloading_the_page(self):
         # 2026-11-17 형우 '버튼 누를 때 딜레이가 너무 길어' → 누른 버튼은 바로 바뀌고 목록만 바꾼다(뒤로 가기도 된다)
-        from datetime import date, datetime
+        # 2026-11-18 형우: 등록월 없앰(계약월만), 막대에 마우스를 올리면 고객 분류별 제품, '이전' 연도 메뉴는 가로로
+        from datetime import date
         from unittest import mock
-        from zoneinfo import ZoneInfo
-        from delivery.models import Customer, Organization
+        from delivery.models import Contract, ContractProduct, Customer, Organization
         user = get_user_model().objects.create_user('browser-period', password='BrowserTestOnly!27')
         UserAccessProfile.objects.create(user=user, audience='employee')
         user.user_permissions.add(Permission.objects.get(content_type__app_label='delivery', codename='manage_delivery'))
-        for name, day in [('기간 시월 기관', (2026, 10, 1)), ('기간 십일월 기관', (2026, 11, 5))]:
-            customer = Customer.objects.create(organization=Organization.objects.create(official_name=name), category='public', partner_public=True)
-            Customer.objects.filter(pk=customer.pk).update(created_at=datetime(*day, 10, tzinfo=ZoneInfo('Asia/Seoul')))
+        c = Product.objects.create(code='browser-period-c', name='가상 기간 C', marker='C')
+        for name, day in [('기간 시월 기관', date(2026, 10, 1)), ('기간 십일월 기관', date(2026, 11, 5))] + [
+                (f'기간 옛 기관 {year}', date(year, 3, 1)) for year in range(2015, 2023)]:
+            customer = Customer.objects.create(organization=Organization.objects.create(official_name=name), category='central', partner_public=True)
+            contract = Contract.objects.create(customer=customer, contracting_party=customer.organization, is_active=True, contract_date=day)
+            ContractProduct.objects.create(contract=contract, product=c, quantity=1)
         with mock.patch('django.utils.timezone.localdate', return_value=date(2026, 11, 17)), sync_playwright() as engine:
             browser = engine.chromium.launch()
             try:
@@ -95,19 +98,34 @@ class CustomerPeriodBrowserScenarios(StaticLiveServerTestCase):
                 page.wait_for_url('**/planning/')
                 page.goto(self.live_server_url + '/planning/?month=all')
                 self.assertIn('기간 시월 기관', page.content())
+                self.assertEqual(page.get_by_text('등록월', exact=True).count(), 0)
+                page.locator('[data-swap="month-2026-10"]').hover()
+                tip = page.locator('[data-swap="month-2026-10"] .period-tip')
+                self.assertTrue(tip.is_visible())
+                self.assertIn('중앙정부', tip.inner_text())
+                self.assertIn('1건', tip.inner_text())
                 page.evaluate('window.__samePage = 1')
                 page.locator('[data-swap="month-2026-11"]').click()
-                page.wait_for_selector('.period-result h2:has-text("2026년 11월 등록 · 1곳")')
+                page.wait_for_selector('.period-result h2:has-text("2026년 11월 계약 · 1곳")')
                 self.assertIn('month=2026-11', page.url)
                 self.assertEqual(page.evaluate('window.__samePage'), 1)
                 self.assertNotIn('기간 시월 기관', page.locator('[data-period-root]').inner_text())
-                page.locator('[data-swap="basis-contract"]').click()
-                self.assertEqual(page.locator('[data-swap="basis-contract"].on').count(), 1)   # 누르자마자 선택 표시
-                page.wait_for_url('**basis=contract**')                                          # 목록은 받은 뒤 바뀐다
+                page.locator('[data-swap="month-2026-10"]').click()
+                self.assertEqual(page.locator('[data-swap="month-2026-10"].sel').count(), 1)    # 누르자마자 선택 표시
+                page.wait_for_url('**month=2026-10**')                                           # 목록은 받은 뒤 바뀐다
                 page.wait_for_selector('[data-period-root]:not([aria-busy])')
                 self.assertEqual(page.evaluate('window.__samePage'), 1)
                 page.go_back()
-                page.wait_for_selector('.period-result h2:has-text("2026년 11월 등록 · 1곳")')
+                page.wait_for_selector('.period-result h2:has-text("2026년 11월 계약 · 1곳")')
                 self.assertEqual(page.evaluate('window.__samePage'), 1)
+                page.locator('.period-older summary').click()
+                menu = page.locator('.period-older > div')
+                links = menu.locator('a').all()
+                self.assertGreaterEqual(len(links), 3)
+                boxes = [link.bounding_box() for link in links[:3]]
+                self.assertEqual(len({round(box['y']) for box in boxes}), 1)                    # 한 줄에 가로로 세 개
+                self.assertTrue(all(box['height'] < 50 and box['width'] >= 48 for box in boxes))   # 숫자가 세로로 쪼개지지 않음
+                page.mouse.click(10, 10)
+                self.assertFalse(menu.is_visible())                                               # 바깥을 누르면 닫힘
             finally:
                 browser.close()

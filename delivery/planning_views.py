@@ -141,12 +141,12 @@ def _customer_list_context(params, today, signature=None):
     ).order_by('organization__official_name')
     # 기간 보기(2026-11-17 형우, 시안 7로 확정): 등록월·계약월, 연도, 열두 달 막대('계약 N건 / 신규 N곳'), 정리할 자료
     from urllib.parse import urlencode
-    from .services.customer_months import BASELINE_UNTIL, chart, month_index, month_label, years_of, _month
-    basis = params.get('basis') if params.get('basis') in {'registered', 'contract'} else 'registered'
+    from .services.customer_months import chart, month_breakdown, month_index, month_label, years_of, _month
+    basis = 'contract'   # 등록월은 없앴다(2026-11-18 형우: "기간에서 등록월은 없애자. 계약월로만 보여도 될 것 같아")
     marks, stats = _shared(signature, ('months', basis), lambda: month_index(basis))
     month = params.get('month', '')
     if not params and _month(today) in stats:
-        month = _month(today)          # 처음 열면 '등록월 · 이번 달'(이번 달에 넣은 것이 바로 보이게). 없으면 전체.
+        month = _month(today)          # 처음 열면 이번 달(계약일이 이번 달인 계약이 있을 때). 없으면 전체.
     if month not in stats:
         month = ''
     kind = params.get('kind') if month and params.get('kind') in {'new', 'added'} else ''
@@ -157,7 +157,7 @@ def _customer_list_context(params, today, signature=None):
         year = years[0]
 
     def link(**changes):
-        state = {'q': query, 'category': category, 'basis': basis, 'year': year, 'month': month or 'all', 'kind': kind}
+        state = {'q': query, 'category': category, 'year': year, 'month': month or 'all', 'kind': kind}
         state.update(changes)
         return '?' + urlencode({key: value for key, value in state.items() if value not in ('', None)})
 
@@ -199,16 +199,7 @@ def _customer_list_context(params, today, signature=None):
         customer.month_kind, day = marks[customer.pk][month] if month else ('', None)
         customer.month_day = day
         customer.month_date = f'{day:%Y.%m.%d} 계약' if day and basis == 'contract' and month[:1].isdigit() else ''
-    # 등록월은 하루에 몰아서 넣으니 날짜별로 묶는다. 계약월은 날짜가 흩어져 카드 안에 계약일을 넣는다.
-    if month and basis == 'registered' and month[:1].isdigit():
-        groups = []
-        for customer in page:
-            heading = f'{customer.month_day.month}월 {customer.month_day.day}일'
-            if not groups or groups[-1]['heading'] != heading:
-                groups.append({'heading': heading, 'items': []})
-            groups[-1]['items'].append(customer)
-    else:
-        groups = [{'heading': '', 'items': list(page)}] if page.object_list else []
+    groups = [{'heading': '', 'items': list(page)}] if page.object_list else []
     fix_key = 'nodate' if basis == 'contract' else 'base'
     fix_count = stats.get(fix_key, {}).get('new', 0)
     shown_years = years[:4] if year in years[:4] else years[:3] + [year]
@@ -218,11 +209,10 @@ def _customer_list_context(params, today, signature=None):
         'logo_css_url': reverse('performance-logo-css') + '?v=' + bundle_version,
         'page': page, 'groups': groups, 'query': query, 'selected_category': category, 'categories': Category.choices,
         'basis': basis, 'month': month, 'kind': kind, 'year': year,
-        'basis_urls': {key: link(basis=key, year='', month='all', kind='') for key in ('registered', 'contract')},
         'years': [{'year': y, 'on': y == year, 'url': link(year=y, month='all', kind='')} for y in shown_years],
         'older_years': [{'year': y, 'on': y == year, 'url': link(year=y, month='all', kind='')} for y in years if y not in shown_years],
-        'chart': chart(stats, basis, year, month, today, lambda key: link(month=key, kind='', year=int(key[:4])))[0],
-        'baseline_next': f'{BASELINE_UNTIL.month}월 {BASELINE_UNTIL.day + 1}일',
+        'chart': chart(stats, basis, year, month, today, lambda key: link(month=key, kind='', year=int(key[:4])),
+                       tips=_shared(signature, 'breakdown', month_breakdown))[0],
         'fix_key': fix_key, 'fix_count': fix_count, 'fix_label': '계약일 미입력' if basis == 'contract' else '기존 자료',
         'fix_url': link(month=fix_key, kind=''),
         'result_title': (f'{month_label(month)} {word} · {row["new"] + row["added"]}곳' if month[:1].isdigit()

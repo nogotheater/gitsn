@@ -41,6 +41,9 @@ document.querySelectorAll('form[data-confirm]').forEach(form => form.addEventLis
    swap(link.href, true, link.dataset.swap);
   });
   window.addEventListener('popstate', () => swap(window.location.href, false, ''));
+  const closeOlder = except => periodRoot.querySelectorAll('.period-older[open]').forEach(menu => { if (menu !== except) menu.open = false; });
+  document.addEventListener('click', event => closeOlder(event.target.closest('.period-older')));
+  document.addEventListener('keydown', event => { if (event.key === 'Escape') closeOlder(null); });
  }
  const presentation = document.querySelector('[data-presentation-form]');
  if (presentation) {

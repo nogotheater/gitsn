@@ -4,6 +4,7 @@
 기준 두 가지:
 - 등록월(registered): 고객사 관리에 넣은 달. 신규 고객사 = 그 달에 고객사를 등록. 계약 추가 = 그 전에 등록한 고객사에 그 달 새 계약을 등록.
 - 계약월(contract): 계약서의 계약일. 신규 고객사 = 첫 계약일이 그 달. 계약 추가 = 이전 계약이 있는 고객사가 그 달에 또 계약.
+  계약일이 빈 계약이 하나라도 있는 고객사는 신규로 세지 않는다(빈 계약이 더 먼저일 수 있다, 2026-11-18 형우).
   계약일이 비어 있는 계약은 어느 달에도 안 잡히므로 '계약일 미입력'으로 따로 모은다(다른 부서 자료가 오면 채울 목록).
 처음 옮겨 온 자료(BASELINE_UNTIL까지 입력)는 등록월 기준에서 달로 나누지 않고 '기존 자료' 하나로 묶는다 — 신규와 섞이지 않게.
 중복 통합으로 제외된 계약(superseded)은 세지 않는다. 통합된 고객사(merged_into)는 목록에 없다.
@@ -53,7 +54,9 @@ def month_index(basis):
             else:
                 marks[row['customer_id']].setdefault('nodate', ('new', None))
         for customer_id, days in dated.items():
-            first = _month(min(days))
+            # 계약일이 빈 계약이 있으면 그게 더 먼저일 수 있다(처음 옮겨 넣은 예전 자료) → 신규로 세지 않고 날짜 있는 계약은 '계약 추가'
+            # (2026-11-18 형우: 울산광역시가 I 계약 2026.10.15 하나만 날짜가 있어 10월 신규로 잡혔다 → "그렇게 가야지")
+            first = None if 'nodate' in marks.get(customer_id, {}) else _month(min(days))
             for day in sorted(days, reverse=True):
                 key = _month(day)
                 if key == first:
@@ -86,12 +89,37 @@ def month_index(basis):
     return marks, dict(stats)
 
 
+def month_breakdown():
+    """계약월 막대에 마우스를 올리면 보이는 고객 분류별 제품 건수(2026-11-18 형우: '중앙정부 I 몇 건 C 몇 건').
+    {월 키: [{'label': 분류, 'items': [{'marker','color','count'}]}]}. 건 = 그 제품이 들어 있는 계약 수(그 달 계약일 기준, 신규·추가 모두)."""
+    from delivery.domain.products import product_sort_key
+    from delivery.models import Category, ContractProduct
+    seen = defaultdict(lambda: defaultdict(lambda: defaultdict(set)))
+    products = {}
+    for row in ContractProduct.objects.filter(contract__customer__merged_into__isnull=True, contract__superseded_by__isnull=True,
+                                              contract__contract_date__isnull=False).values(
+            'contract_id', 'contract__contract_date', 'contract__customer__category', 'product_id', 'product__marker', 'product__name', 'product__color'):
+        products[row['product_id']] = row
+        seen[_month(row['contract__contract_date'])][row['contract__customer__category']][row['product_id']].add(row['contract_id'])
+    order = {value: index for index, value in enumerate(Category.values)}
+    labels = dict(Category.choices)
+    out = {}
+    for key, categories in seen.items():
+        out[key] = [{'label': labels.get(category, category or '분류 없음'),
+                     'items': [{'marker': products[pid]['product__marker'] or products[pid]['product__name'],
+                                'color': products[pid]['product__color'], 'count': len(contracts)}
+                               for pid, contracts in sorted(found.items(), key=lambda item: product_sort_key(
+                                   products[item[0]]['product__marker'], products[item[0]]['product__name'], item[0]))]}
+                    for category, found in sorted(categories.items(), key=lambda item: order.get(item[0], 99))]
+    return out
+
+
 def years_of(stats, basis, today):
     years = sorted({int(key[:4]) for key in stats if key[:1].isdigit()} | ({today.year} if basis == 'registered' else set()), reverse=True)
     return years or [today.year]
 
 
-def chart(stats, basis, year, selected, today, link):
+def chart(stats, basis, year, selected, today, link, tips=None):
     """그 해 열두 달(등록월은 처음 입력한 자료 다음 달부터) 막대. 높이 = 신규 곳 + 추가 계약 건, 가장 큰 달이 150px."""
     first = BASELINE_UNTIL.month if basis == 'registered' and year == BASELINE_UNTIL.year else 1
     if basis == 'registered' and year < BASELINE_UNTIL.year:
@@ -103,7 +131,7 @@ def chart(stats, basis, year, selected, today, link):
         future = (year, month) > (today.year, today.month)
         months.append({'key': key, 'month': month, 'new': row['new'], 'contracts': row['contracts'],
                        'future': future, 'current': (year, month) == (today.year, today.month),
-                       'selected': key == selected, 'url': link(key)})
+                       'selected': key == selected, 'url': link(key), 'tip': (tips or {}).get(key, [])})
     peak = max([m['new'] + m['contracts'] for m in months] + [1])
     for m in months:
         total = m['new'] + m['contracts']

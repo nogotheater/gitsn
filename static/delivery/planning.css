@@ -26,9 +26,16 @@
 .seg.small a,.seg.small span{min-height:32px;padding:4px 12px;font-size:13px}
 .period-years{display:flex;align-items:center;gap:2px;margin-left:auto}.period-years a{padding:6px 10px;font-size:14px;color:var(--text-secondary);text-decoration:none;border-bottom:2px solid transparent}
 .period-years a.on{color:var(--text-heading);font-weight:600;border-bottom-color:var(--text-heading)}
-.period-older{position:relative;font-size:14px;color:var(--text-secondary)}.period-older summary{cursor:pointer;padding:6px 10px;list-style:none}.period-older summary::after{content:' ▾'}
-.period-older>div{position:absolute;right:0;top:100%;z-index:5;background:#fff;border:1px solid var(--border-subtle);border-radius:var(--radius-control);padding:6px;display:grid;grid-template-columns:repeat(3,auto);gap:2px}
-.period-chart{position:relative;height:276px;margin-top:12px;overflow-x:auto}
+.period-older{position:relative;font-size:14px;color:var(--text-secondary)}
+.period-older summary{display:flex;align-items:center;gap:6px;padding:6px 10px;cursor:pointer;list-style:none;border-bottom:2px solid transparent;user-select:none}
+.period-older summary::-webkit-details-marker{display:none}
+.period-older summary::after{content:'';width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:translateY(-2px) rotate(45deg)}
+.period-older[open] summary{color:var(--text-heading)}.period-older[open] summary::after{transform:translateY(1px) rotate(-135deg)}
+.period-older>div{position:absolute;right:0;top:calc(100% + 6px);z-index:20;width:max-content;display:grid;grid-template-columns:repeat(3,64px);gap:2px;padding:6px;background:#fff;border:1px solid var(--border-subtle);border-radius:var(--radius-control);box-shadow:0 8px 24px rgba(18,38,68,.12)}
+.period-years .period-older>div a{display:block;padding:8px 0;border:0;border-radius:var(--radius-control);text-align:center;white-space:nowrap;font-size:14px;font-weight:400;color:var(--text-body);font-variant-numeric:tabular-nums}
+.period-years .period-older>div a:hover{background:var(--surface-hover)}
+.period-years .period-older>div a.on{background:var(--brand-tint);color:var(--brand-action);font-weight:600}
+.period-chart{position:relative;height:276px;margin-top:12px}
 .period-grid{position:absolute;left:0;right:0;border-top:1px dashed var(--gray-200)}.period-grid.top{top:56px}.period-grid.mid{top:143px}
 .period-base{position:absolute;left:0;right:0;bottom:42px;border-top:1px solid var(--gray-200)}
 .period-cols{position:absolute;inset:0;display:grid;grid-template-columns:repeat(12,minmax(48px,1fr))}
@@ -59,3 +66,13 @@
 /* 기간 보기 바꾸는 중(2026-11-17 형우 '딜레이가 너무 길어'): 누른 버튼은 바로 바뀌고 목록만 잠깐 흐려진다 */
 [data-period-root][aria-busy="true"] .customer-grid,[data-period-root][aria-busy="true"] .period-result,[data-period-root][aria-busy="true"] .period-day,[data-period-root][aria-busy="true"] .section-label{opacity:.45;transition:opacity .15s .12s}
 [data-period-root][aria-busy="true"]{cursor:progress}
+/* 막대 안내(2026-11-18 형우: 마우스를 올리면 고객 분류별 '중앙정부 I 몇 건 C 몇 건') — 막대 옆에 뜨고, 오른쪽 여섯 달은 왼쪽에 */
+.period-tip{display:none;position:absolute;left:calc(50% + 16px);bottom:48px;z-index:15;width:max-content;min-width:180px;max-width:320px;padding:12px 14px;background:#fff;border:1px solid var(--border-subtle);border-radius:var(--radius-control);box-shadow:0 8px 24px rgba(18,38,68,.12);text-align:left;color:var(--text-body);font-size:13px;line-height:1.4;pointer-events:none}
+.period-tip.flip{left:auto;right:calc(50% + 16px)}
+.period-tip strong{display:block;margin-bottom:8px;font-size:13px;color:var(--text-heading)}
+.period-tip-row{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:center;padding:4px 0;border-top:1px solid var(--border-subtle)}
+.period-tip-label{color:var(--text-secondary);white-space:nowrap}
+.period-tip-items{display:flex;flex-wrap:wrap;gap:4px 10px;justify-content:flex-end}
+.period-tip-items>span{display:inline-flex;align-items:center;gap:4px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.period-col:hover .period-tip,.period-col:focus-visible .period-tip{display:block}
+@media(max-width:639px){.period-chart{overflow-x:auto}.period-tip{display:none!important}}
